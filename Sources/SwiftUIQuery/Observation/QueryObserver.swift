@@ -174,17 +174,6 @@ public final class QueryObserver<K: QueryKey> {
         client?.unregisterActiveObserver(self, forKey: storageKey)
     }
 
-    @MainActor
-    deinit {
-        observationTask?.cancel()
-        fetchTask?.cancel()
-        lifecycleTask?.cancel()
-        connectivityTask?.cancel()
-        // Eagerly drop our registry entry instead of waiting for the client's
-        // lazy cleanup pass (#17).
-        client?.unregisterActiveObserver(self, forKey: storageKey)
-    }
-    
     // MARK: - Public Actions
     
     /// Manually trigger a refetch
