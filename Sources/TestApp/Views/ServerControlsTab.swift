@@ -89,32 +89,32 @@ struct ServerControlsTab: View {
                 Section("Cache Controls") {
                     Button("Clear All Cache") {
                         Task {
-                            await client.clear()
+                            try? await client.clear()
                         }
                     }
                     .foregroundStyle(.red)
 
                     Button("Invalidate Users") {
                         Task {
-                            await client.invalidate(tag: .users)
+                            try? await client.invalidate(tag: .users)
                         }
                     }
 
                     Button("Invalidate Posts") {
                         Task {
-                            await client.invalidate(tag: .posts)
+                            try? await client.invalidate(tag: .posts)
                         }
                     }
 
                     Button("Invalidate Comments") {
                         Task {
-                            await client.invalidate(tag: .comments)
+                            try? await client.invalidate(tag: .comments)
                         }
                     }
 
                     Button("Run Garbage Collection") {
                         Task {
-                            await client.collectGarbage()
+                            try? await client.collectGarbage()
                         }
                     }
                 }
@@ -208,6 +208,6 @@ struct CacheStatsView: View {
     }
 
     private func refreshStats() async {
-        stats = await client.stats()
+        stats = try? await client.stats()
     }
 }

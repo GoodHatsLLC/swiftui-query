@@ -8,12 +8,12 @@ private typealias PlatformSHA256 = Crypto.SHA256
 #endif
 
 /// Result of a cache lookup
-public struct CacheResult<T: Sendable>: Sendable {
-    public let data: T
-    public let isStale: Bool
-    public let updatedAt: Date
+struct CacheResult<T: Sendable>: Sendable {
+    let data: T
+    let isStale: Bool
+    let updatedAt: Date
     
-    public init(data: T, isStale: Bool, updatedAt: Date) {
+    init(data: T, isStale: Bool, updatedAt: Date) {
         self.data = data
         self.isStale = isStale
         self.updatedAt = updatedAt
@@ -27,7 +27,7 @@ public struct CacheResult<T: Sendable>: Sendable {
 /// (GRDB / in-memory / Codable). Change events are produced by an in-memory
 /// broadcaster fired on every write — identical across all backends — rather
 /// than by database observation.
-public actor QueryCache {
+actor QueryCache {
     private let storage: any CacheStorage
     private var memoryCache: [String: AnyCacheEntry] = [:]
     private let clock: QueryClock
@@ -64,13 +64,13 @@ public actor QueryCache {
     // MARK: - Initialization
 
     /// Inject a storage backend directly (advanced / custom backends).
-    public init(storage: any CacheStorage, clock: QueryClock = .system) {
+    init(storage: any CacheStorage, clock: QueryClock = .system) {
         self.storage = storage
         self.clock = clock
     }
 
     /// Create a cache with the chosen storage backend (default: in-memory).
-    public init(storage kind: CacheStorageKind = .inMemory, clock: QueryClock = .system) throws {
+    init(storage kind: CacheStorageKind = .inMemory, clock: QueryClock = .system) throws {
         self.storage = try kind.makeStorage()
         self.clock = clock
     }
@@ -78,13 +78,17 @@ public actor QueryCache {
     // MARK: - Read Operations
     
     /// Get a cached value by key
-    public func get<T: Codable & Sendable>(key: String, as type: T.Type) async throws -> CacheResult<T>? {
+    func get<T: Codable & Sendable>(identity: QueryIdentity, as type: T.Type) async throws -> CacheResult<T>? {
+        try await get(storageKey: identity.storageKey, as: type)
+    }
+
+    func get<T: Codable & Sendable>(storageKey: String, as type: T.Type) async throws -> CacheResult<T>? {
         let now = clock.now()
 
         // Check memory cache first
-        if let entry = memoryCache[key] as? CacheEntry<T> {
+        if let entry = memoryCache[storageKey] as? CacheEntry<T> {
             if entry.isExpired(at: now) {
-                memoryCache.removeValue(forKey: key)
+                memoryCache.removeValue(forKey: storageKey)
             } else {
             return CacheResult(
                 data: entry.data,
@@ -95,7 +99,7 @@ public actor QueryCache {
         }
 
         // Fall back to persistent store
-        guard let record = try await storage.read(key: key, now: now) else {
+        guard let record = try await storage.read(storageKey: storageKey, now: now) else {
             return nil
         }
         let data = try decoder.decode(T.self, from: record.responseData)
@@ -111,14 +115,18 @@ public actor QueryCache {
     /// Unlike `get(key:as:)`, this method returns expired entries marked as stale
     /// rather than filtering them out. Use this when you want to display stale data
     /// while fetching fresh data (stale-while-revalidate for expired entries).
-    public func getIncludingExpired<T: Codable & Sendable>(key: String, as type: T.Type) async throws -> CacheResult<T>? {
+    func getIncludingExpired<T: Codable & Sendable>(identity: QueryIdentity, as type: T.Type) async throws -> CacheResult<T>? {
+        try await getIncludingExpired(storageKey: identity.storageKey, as: type)
+    }
+
+    func getIncludingExpired<T: Codable & Sendable>(storageKey: String, as type: T.Type) async throws -> CacheResult<T>? {
         // Check non-expired cache first (normal path)
-        if let result = try await get(key: key, as: type) {
+        if let result = try await get(storageKey: storageKey, as: type) {
             return result
         }
 
         // Fall back to expired entries in persistent store
-        guard let record = try await storage.readIgnoringExpiry(key: key) else {
+        guard let record = try await storage.readIgnoringExpiry(storageKey: storageKey) else {
             return nil
         }
         let data = try decoder.decode(T.self, from: record.responseData)
@@ -131,24 +139,46 @@ public actor QueryCache {
     }
 
     /// Check if a key exists in cache
-    public func exists(key: String) async throws -> Bool {
+    func exists(identity: QueryIdentity) async throws -> Bool {
+        try await exists(storageKey: identity.storageKey)
+    }
+
+    func exists(storageKey: String) async throws -> Bool {
         let now = clock.now()
-        if let entry = memoryCache[key] {
+        if let entry = memoryCache[storageKey] {
             if entry.isExpired(at: now) {
-                memoryCache.removeValue(forKey: key)
+                memoryCache.removeValue(forKey: storageKey)
             } else {
                 return true
             }
         }
 
-        return try await storage.exists(key: key, now: now)
+        return try await storage.exists(storageKey: storageKey, now: now)
     }
     
     // MARK: - Write Operations
     
     /// Set a cached value
-    public func set<T: Codable & Sendable>(
-        key: String,
+    func set<T: Codable & Sendable>(
+        identity: QueryIdentity,
+        data: T,
+        tags: Set<QueryTag>,
+        staleTime: Duration,
+        cacheTime: Duration
+    ) async throws {
+        var tags = tags
+        tags.insert(identity.tag)
+        try await set(
+            storageKey: identity.storageKey,
+            data: data,
+            tags: tags,
+            staleTime: staleTime,
+            cacheTime: cacheTime
+        )
+    }
+
+    func set<T: Codable & Sendable>(
+        storageKey: String,
         data: T,
         tags: Set<QueryTag>,
         staleTime: Duration,
@@ -164,11 +194,11 @@ public actor QueryCache {
         // can't leave memory and storage divergent (#15). `createdAt` is preserved
         // on overwrite inside the backend's upsert.
         let record = CacheRecord(
-            cacheKey: key,
+            storageKey: storageKey,
             queryHash: responseData.sha256Hash,
             responseData: responseData,
             responseType: String(describing: T.self),
-            tagSegments: tags.map(\.segments),
+            tags: tags,
             createdAt: now,
             updatedAt: now,
             staleAt: staleAt,
@@ -178,20 +208,20 @@ public actor QueryCache {
         )
         try await storage.upsert(record)
 
-        memoryCache[key] = CacheEntry(
+        memoryCache[storageKey] = CacheEntry(
             data: data,
             tags: tags,
             updatedAt: now,
             staleAt: staleAt,
             expiresAt: expiresAt
         )
-        broadcast(key: key, record: record)
+        broadcast(storageKey: storageKey, record: record)
     }
     
     // MARK: - Invalidation
     
     /// Invalidate all entries matching a tag prefix
-    public func invalidate(tag: QueryTag) async throws -> [String] {
+    func invalidate(tag: QueryTag) async throws -> [String] {
         // Mark as stale in memory
         var memoryKeys: [String] = []
         for (key, entry) in memoryCache {
@@ -210,39 +240,47 @@ public actor QueryCache {
 
         // Notify observers of the invalidation toggle.
         for key in allKeys {
-            await broadcastCurrent(key: key)
+            await broadcastCurrent(storageKey: key)
         }
 
         return allKeys
     }
 
     /// Invalidate a specific key
-    public func invalidate(key: String) async throws {
-        memoryCache[key]?.markStale()
-        try await storage.markStale(key: key)
-        await broadcastCurrent(key: key)
+    func invalidate(identity: QueryIdentity) async throws {
+        try await invalidate(storageKey: identity.storageKey)
+    }
+
+    func invalidate(storageKey: String) async throws {
+        memoryCache[storageKey]?.markStale()
+        try await storage.markStale(storageKey: storageKey)
+        await broadcastCurrent(storageKey: storageKey)
     }
 
     /// Remove a specific key from cache entirely
-    public func remove(key: String) async throws {
-        memoryCache.removeValue(forKey: key)
-        try await storage.remove(key: key)
-        broadcast(key: key, record: nil)
+    func remove(identity: QueryIdentity) async throws {
+        try await remove(storageKey: identity.storageKey)
+    }
+
+    func remove(storageKey: String) async throws {
+        memoryCache.removeValue(forKey: storageKey)
+        try await storage.remove(storageKey: storageKey)
+        broadcast(storageKey: storageKey, record: nil)
     }
 
     /// Clear all cache entries
-    public func clear() async throws {
+    func clear() async throws {
         memoryCache.removeAll()
         try await storage.clear()
         for key in Array(subscribers.keys) {
-            broadcast(key: key, record: nil)
+            broadcast(storageKey: key, record: nil)
         }
     }
     
     // MARK: - Garbage Collection
     
     /// Remove expired entries from the cache
-    public func collectGarbage() async throws -> Int {
+    func collectGarbage() async throws -> Int {
         // Clear expired from memory cache
         let now = clock.now()
         memoryCache = memoryCache.filter { !$0.value.isExpired(at: now) }
@@ -251,7 +289,7 @@ public actor QueryCache {
         // each evicted key (matches the prior ValueObservation behavior).
         let deletedKeys = try await storage.deleteExpired(now: now)
         for key in deletedKeys {
-            broadcast(key: key, record: nil)
+            broadcast(storageKey: key, record: nil)
         }
         return deletedKeys.count
     }
@@ -268,25 +306,29 @@ public actor QueryCache {
     ///   (this preserves the `staleTime == .zero` no-loop guarantee);
     /// - emits `nil` when the key is removed or garbage-collected;
     /// - is cleaned up automatically when the consumer cancels (`onTermination`).
-    public func observe(key: String) async -> AsyncStream<CacheRecord?> {
+    func observe(identity: QueryIdentity) async -> AsyncStream<CacheRecord?> {
+        await observe(storageKey: identity.storageKey)
+    }
+
+    func observe(storageKey: String) async -> AsyncStream<CacheRecord?> {
         let (stream, continuation) = AsyncStream<CacheRecord?>.makeStream()
         let id = UUID()
 
         // Read the current value for the initial emission. The remainder of this
         // method runs without suspension, so registration + initial yield are
         // atomic with respect to other actor work.
-        let initial = try? await storage.readIgnoringExpiry(key: key)
+        let initial = try? await storage.readIgnoringExpiry(storageKey: storageKey)
         let signature = initial.map {
             BroadcastSignature(hash: $0.queryHash, isInvalidated: $0.isInvalidated)
         }
 
-        subscribers[key, default: [:]][id] = Subscriber(
+        subscribers[storageKey, default: [:]][id] = Subscriber(
             continuation: continuation,
             lastSignature: signature
         )
 
         continuation.onTermination = { [weak self] _ in
-            Task { await self?.removeSubscriber(id: id, forKey: key) }
+            Task { await self?.removeSubscriber(id: id, forKey: storageKey) }
         }
 
         continuation.yield(initial)
@@ -295,8 +337,8 @@ public actor QueryCache {
 
     /// Broadcast a post-write record to all subscribers of `key`, de-duplicating
     /// per subscriber by `(hash, isInvalidated)`.
-    private func broadcast(key: String, record: CacheRecord?) {
-        guard var subs = subscribers[key], !subs.isEmpty else { return }
+    private func broadcast(storageKey: String, record: CacheRecord?) {
+        guard var subs = subscribers[storageKey], !subs.isEmpty else { return }
         let signature = record.map {
             BroadcastSignature(hash: $0.queryHash, isInvalidated: $0.isInvalidated)
         }
@@ -304,15 +346,15 @@ public actor QueryCache {
             subs[id]?.lastSignature = signature
             sub.continuation.yield(record)
         }
-        subscribers[key] = subs
+        subscribers[storageKey] = subs
     }
 
     /// Broadcast the current persisted record for `key` (used after invalidation,
     /// where the caller doesn't already hold the updated record).
-    private func broadcastCurrent(key: String) async {
-        guard subscribers[key]?.isEmpty == false else { return }
-        let record = try? await storage.readIgnoringExpiry(key: key)
-        broadcast(key: key, record: record)
+    private func broadcastCurrent(storageKey: String) async {
+        guard subscribers[storageKey]?.isEmpty == false else { return }
+        let record = try? await storage.readIgnoringExpiry(storageKey: storageKey)
+        broadcast(storageKey: storageKey, record: record)
     }
 
     private func removeSubscriber(id: UUID, forKey key: String) {
@@ -325,7 +367,7 @@ public actor QueryCache {
     // MARK: - Stats
     
     /// Get cache statistics
-    public func stats() async throws -> CacheStats {
+    func stats() async throws -> CacheStats {
         let now = clock.now()
         let counts = try await storage.statsCounts(now: now)
 

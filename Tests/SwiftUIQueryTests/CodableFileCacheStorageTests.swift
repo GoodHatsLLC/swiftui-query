@@ -13,11 +13,11 @@ final class CodableFileCacheStorageTests: XCTestCase {
 
     private func makeRecord(key: String) -> CacheRecord {
         CacheRecord(
-            cacheKey: key,
+            storageKey: key,
             queryHash: "hash",
             responseData: Data(#"{"id":1,"name":"Ada"}"#.utf8),
             responseType: "TestUser",
-            tagSegments: [["users"]],
+            tags: [QueryTag("users")],
             staleAt: Date.distantFuture,
             expiresAt: Date.distantFuture
         )
@@ -38,8 +38,8 @@ final class CodableFileCacheStorageTests: XCTestCase {
 
         // A fresh instance over the same directory sees the persisted record.
         let second = try CodableFileCacheStorage(directory: dir)
-        let loaded = try await second.readIgnoringExpiry(key: "user:1")
-        XCTAssertEqual(loaded?.cacheKey, "user:1")
+        let loaded = try await second.readIgnoringExpiry(storageKey: "user:1")
+        XCTAssertEqual(loaded?.storageKey, "user:1")
         XCTAssertEqual(loaded?.responseData, makeRecord(key: "user:1").responseData)
     }
 
@@ -68,7 +68,7 @@ final class CodableFileCacheStorageTests: XCTestCase {
         try Data([0x00, 0x01, 0x02, 0xFF]).write(to: files[0])
 
         // The read reports a miss (so the observer would refetch)...
-        let result = try await storage.readIgnoringExpiry(key: "user:1")
+        let result = try await storage.readIgnoringExpiry(storageKey: "user:1")
         XCTAssertNil(result)
 
         // ...and the corrupt file is removed (recovery).
@@ -85,11 +85,11 @@ final class CodableFileCacheStorageTests: XCTestCase {
         let storage = try CodableFileCacheStorage(directory: dir)
         try await storage.upsert(
             CacheRecord(
-                cacheKey: TestUserQuery(userId: 1).cacheKey,
+                storageKey: TestUserQuery(userId: 1).storageKey,
                 queryHash: "h",
                 responseData: Data([0x00]),        // not valid JSON for TestUser
                 responseType: "TestUser",
-                tagSegments: [["users"]],
+                tags: [QueryTag("users")],
                 staleAt: Date.distantFuture,
                 expiresAt: Date.distantFuture
             )
@@ -97,7 +97,7 @@ final class CodableFileCacheStorageTests: XCTestCase {
 
         let cache = QueryCache(storage: storage)
         let fetchCount = Synchronized(0)
-        let recovered = try await MainActor.run {
+        let recovered = await MainActor.run {
             QueryObserver(
                 key: TestUserQuery(userId: 1),
                 fetcher: {
@@ -113,7 +113,7 @@ final class CodableFileCacheStorageTests: XCTestCase {
         await MainActor.run { recovered.stopObserving() }
 
         XCTAssertGreaterThanOrEqual(fetchCount.withLock { $0 }, 1, "corrupt cache must trigger a refetch")
-        let result = try await cache.get(key: TestUserQuery(userId: 1).cacheKey, as: TestUser.self)
+        let result = try await cache.get(storageKey: TestUserQuery(userId: 1).storageKey, as: TestUser.self)
         XCTAssertEqual(result?.data, TestUser(id: 1, name: "Recovered"))
     }
 }

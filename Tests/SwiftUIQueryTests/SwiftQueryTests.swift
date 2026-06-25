@@ -194,19 +194,19 @@ final class QueryOptionsTests: XCTestCase {
 
         XCTAssertEqual(options.staleTime, .seconds(30))
         XCTAssertEqual(options.cacheTime, .days(7))
-        XCTAssertEqual(options.retryCount, 3)
+        XCTAssertEqual(options.retryAttempts, 3)
     }
     
     func testCustomOptions() {
         let options = QueryOptions(
             staleTime: .minutes(10),
             cacheTime: .hours(1),
-            retryCount: 5
+            retryAttempts: 5
         )
         
         XCTAssertEqual(options.staleTime, .minutes(10))
         XCTAssertEqual(options.cacheTime, .hours(1))
-        XCTAssertEqual(options.retryCount, 5)
+        XCTAssertEqual(options.retryAttempts, 5)
     }
 }
 
@@ -243,6 +243,6 @@ struct TestUserQuery: QueryKey {
     typealias Response = TestUser
     let userId: Int
 
-    var cacheKey: String { "user:\(userId)" }
-    var tags: Set<QueryTag> { [QueryTag("users"), QueryTag("users", "\(userId)")] }
+    var identity: QueryIdentity { QueryIdentity("users", userId) }
+    var invalidationTags: Set<QueryTag> { [QueryTag("users")] }
 }

@@ -17,12 +17,12 @@ public final class QueryClient: Sendable {
     // MARK: - Shared Instance
 
     /// Shared query client instance
-    public static let shared = QueryClient()
+    public static let shared = try! QueryClient()
 
     // MARK: - Properties
 
     /// The underlying cache
-    public let cache: QueryCache
+    let cache: QueryCache
 
     /// Clock used for time-based cache behavior.
     public let clock: QueryClock
@@ -31,13 +31,13 @@ public final class QueryClient: Sendable {
     public let defaultOptions: QueryOptions
 
     /// Tracks invalidation chains to detect cycles
-    public let invalidationTracker: InvalidationTracker
+    let invalidationTracker: InvalidationTracker
 
     /// Emits app lifecycle events for automatic refetch behavior.
-    public let lifecycleMonitor: AppLifecycleMonitor
+    let lifecycleMonitor: AppLifecycleMonitor
 
     /// Emits network connectivity changes for automatic refetch behavior.
-    public let connectivityMonitor: ConnectivityMonitor
+    let connectivityMonitor: ConnectivityMonitor
 
     /// Track active queries for refetching on invalidation.
     /// Multiple observers may exist for the same key.
@@ -48,23 +48,14 @@ public final class QueryClient: Sendable {
     public init(
         storage: CacheStorageKind = .inMemory,
         clock: QueryClock = .system,
-        defaultOptions: QueryOptions = .default,
-        invalidationTracking: InvalidationTracker.Configuration = .default,
-        lifecycleMonitor: AppLifecycleMonitor = .shared,
-        connectivityMonitor: ConnectivityMonitor = .shared
-    ) {
-        do {
-            self.cache = try QueryCache(storage: storage, clock: clock)
-        } catch {
-            // Fall back to an in-memory cache if the chosen backend fails to
-            // initialize (e.g. disk issues). Should not happen in normal use.
-            self.cache = try! QueryCache(storage: .inMemory, clock: clock)
-        }
+        defaultOptions: QueryOptions = .default
+    ) throws {
+        self.cache = try QueryCache(storage: storage, clock: clock)
         self.clock = clock
         self.defaultOptions = defaultOptions
-        self.invalidationTracker = InvalidationTracker(configuration: invalidationTracking)
-        self.lifecycleMonitor = lifecycleMonitor
-        self.connectivityMonitor = connectivityMonitor
+        self.invalidationTracker = InvalidationTracker(configuration: .default)
+        self.lifecycleMonitor = .shared
+        self.connectivityMonitor = .shared
     }
 
     /// For testing with a specific cache
@@ -117,7 +108,7 @@ public final class QueryClient: Sendable {
         let opts = options ?? defaultOptions
 
         // Check cache first
-        if let cached = try await cache.get(key: key.cacheKey, as: K.Response.self) {
+        if let cached = try await cache.get(identity: key.identity, as: K.Response.self) {
             if !cached.isStale {
                 return FetchResult(
                     data: cached.data,
@@ -127,19 +118,11 @@ public final class QueryClient: Sendable {
                 )
             }
 
-            // Have stale data - return it but trigger background refresh
-            Task {
-                _ = try? await fetchAndCache(key: key, options: opts, fetcher: fetcher)
-            }
-            return FetchResult(
-                data: cached.data,
-                isFromCache: true,
-                isStale: true,
-                isRefreshing: true
-            )
+            // Imperative fetches make stale refresh failures explicit. Observed
+            // queries still use stale-while-revalidate through `QueryObserver`.
         }
 
-        // No cache - fetch fresh
+        // No fresh cache - fetch fresh.
         let data = try await fetchAndCache(key: key, options: opts, fetcher: fetcher)
         return FetchResult(
             data: data,
@@ -180,23 +163,11 @@ public final class QueryClient: Sendable {
     ///
     /// - Parameter tag: The tag to invalidate (invalidates all queries with matching tag prefix)
     /// - Parameter source: Optional source identifier for debugging (e.g., "CreatePostMutation")
-    public func invalidate(tag: QueryTag, source: String? = nil) async {
-        do {
-            try await invalidationTracker.withInvalidation(tag: tag, source: source) {
-                do {
-                    let invalidatedKeys = try await cache.invalidate(tag: tag)
-                    await triggerRefetches(forKeys: invalidatedKeys)
-                } catch {
-                    // Surface, don't swallow: a silently-failed invalidation looks
-                    // like success while serving stale data (#18).
-                    warn("⚠️ [SwiftUIQuery] invalidate(tag: \(tag)) failed: \(error)")
-                }
-
-                // Clean up dead references
-                cleanupActiveQueries()
-            }
-        } catch {
-            // Cycle/depth limit hit; the tracker has already logged the details.
+    public func invalidate(tag: QueryTag, source: String? = nil) async throws {
+        try await invalidationTracker.withInvalidation(tag: tag, source: source) {
+            let invalidatedKeys = try await cache.invalidate(tag: tag)
+            await triggerRefetches(forKeys: invalidatedKeys)
+            cleanupActiveQueries()
         }
     }
 
@@ -204,59 +175,39 @@ public final class QueryClient: Sendable {
     ///
     /// - Parameter key: The query key to invalidate
     /// - Parameter source: Optional source identifier for debugging
-    public func invalidate<K: QueryKey>(key: K, source: String? = nil) async {
-        do {
-            try await invalidationTracker.withInvalidation(key: key.cacheKey, source: source) {
-                do {
-                    try await cache.invalidate(key: key.cacheKey)
-                } catch {
-                    warn("⚠️ [SwiftUIQuery] invalidate(key: \(key.cacheKey)) failed: \(error)")
-                }
-                await triggerRefetches(forKeys: [key.cacheKey])
-            }
-        } catch {
-            // Cycle/depth limit hit; the tracker has already logged the details.
-        }
-    }
-
-    /// Invalidate by tag, throwing on cycle detection
-    ///
-    /// Use this variant when you want explicit error handling for cycles.
-    public func invalidateOrThrow(tag: QueryTag, source: String? = nil) async throws {
-        try await invalidationTracker.withInvalidation(tag: tag, source: source) {
-            let invalidatedKeys = try? await cache.invalidate(tag: tag)
-            await triggerRefetches(forKeys: invalidatedKeys ?? [])
-
-            cleanupActiveQueries()
+    public func invalidate<K: QueryKey>(_ key: K, source: String? = nil) async throws {
+        try await invalidationTracker.withInvalidation(key: key.storageKey, source: source) {
+            try await cache.invalidate(identity: key.identity)
+            await triggerRefetches(forKeys: [key.storageKey])
         }
     }
 
     /// Get invalidation tracking statistics
-    public var invalidationStats: InvalidationTracker.Stats {
+    var invalidationStats: InvalidationTracker.Stats {
         invalidationTracker.stats
     }
     
     // MARK: - Direct Cache Manipulation
     
     /// Set query data directly in cache
-    public func setQueryData<K: QueryKey>(_ key: K, data: K.Response) async {
-        try? await cache.set(
-            key: key.cacheKey,
+    public func setQueryData<K: QueryKey>(_ key: K, data: K.Response) async throws {
+        try await cache.set(
+            identity: key.identity,
             data: data,
-            tags: key.tags,
+            tags: key.cacheTags,
             staleTime: defaultOptions.staleTime,
             cacheTime: defaultOptions.cacheTime
         )
     }
     
     /// Get cached data for a query
-    public func getQueryData<K: QueryKey>(_ key: K) async -> K.Response? {
-        try? await cache.get(key: key.cacheKey, as: K.Response.self)?.data
+    public func getQueryData<K: QueryKey>(_ key: K) async throws -> K.Response? {
+        try await cache.get(identity: key.identity, as: K.Response.self)?.data
     }
     
     /// Remove a query from cache
-    public func removeQueryData<K: QueryKey>(_ key: K) async {
-        try? await cache.remove(key: key.cacheKey)
+    public func removeQueryData<K: QueryKey>(_ key: K) async throws {
+        try await cache.remove(identity: key.identity)
     }
     
     // MARK: - Prefetching
@@ -266,34 +217,34 @@ public final class QueryClient: Sendable {
         _ key: K,
         options: QueryOptions? = nil,
         fetcher: @escaping @Sendable () async throws -> K.Response
-    ) async {
+    ) async throws {
         let opts = options ?? defaultOptions
         
         // Only prefetch if not already cached and fresh
-        if let cached = try? await cache.get(key: key.cacheKey, as: K.Response.self),
+        if let cached = try await cache.get(identity: key.identity, as: K.Response.self),
            !cached.isStale {
             return
         }
         
-        _ = try? await fetchAndCache(key: key, options: opts, fetcher: fetcher)
+        _ = try await fetchAndCache(key: key, options: opts, fetcher: fetcher)
     }
     
     // MARK: - Cache Management
     
     /// Clear all cached data
-    public func clear() async {
-        try? await cache.clear()
+    public func clear() async throws {
+        try await cache.clear()
     }
     
     /// Run garbage collection
-    public func collectGarbage() async {
-        _ = try? await cache.collectGarbage()
+    public func collectGarbage() async throws {
+        _ = try await cache.collectGarbage()
         cleanupActiveQueries()
     }
     
     /// Get cache statistics
-    public func stats() async -> CacheStats? {
-        try? await cache.stats()
+    public func stats() async throws -> CacheStats {
+        try await cache.stats()
     }
     
     // MARK: - Private Helpers
@@ -306,9 +257,9 @@ public final class QueryClient: Sendable {
         let data = try await fetcher()
         
         try await cache.set(
-            key: key.cacheKey,
+            identity: key.identity,
             data: data,
-            tags: key.tags,
+            tags: key.cacheTags,
             staleTime: options.staleTime,
             cacheTime: options.cacheTime
         )

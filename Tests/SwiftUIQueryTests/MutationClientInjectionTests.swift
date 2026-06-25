@@ -8,17 +8,17 @@ final class MutationClientInjectionTests: XCTestCase {
 
         let key = TestUserQuery(userId: 999)
         try await cache.set(
-            key: key.cacheKey,
+            storageKey: key.storageKey,
             data: TestUser(id: 999, name: "Cached"),
-            tags: key.tags,
+            tags: key.cacheTags,
             staleTime: .hours(1),
             cacheTime: .hours(1)
         )
 
         let mutation = await MainActor.run {
-            MutationState<Void, Void>(
+            MutationState<Void, Void, Void>(
                 name: "TestMutation",
-                mutationFn: { },
+                mutationFn: { _ in },
                 invalidateTags: [QueryTag("users")],
                 client: client
             )
@@ -26,9 +26,8 @@ final class MutationClientInjectionTests: XCTestCase {
 
         _ = try await mutation.mutate(())
 
-        let cached = try await cache.get(key: key.cacheKey, as: TestUser.self)
+        let cached = try await cache.get(storageKey: key.storageKey, as: TestUser.self)
         XCTAssertEqual(cached?.data.name, "Cached")
         XCTAssertEqual(cached?.isStale, true)
     }
 }
-

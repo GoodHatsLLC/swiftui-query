@@ -11,7 +11,7 @@ final class QueryObserverStressTests: XCTestCase {
         let observers: [QueryObserver<TestUserQuery>] = (0..<50).map { id in
             client.query(
                 TestUserQuery(userId: id),
-                options: .init(staleTime: .hours(1), cacheTime: .hours(1), retryCount: 1),
+                options: .init(staleTime: .hours(1), cacheTime: .hours(1), retryAttempts: 1),
                 fetcher: {
                     let n = await counter.incrementAndGet()
                     return TestUser(id: id, name: "Fetch \(n)")
@@ -33,7 +33,7 @@ final class QueryObserverStressTests: XCTestCase {
         }
 
         let before = await counter.value()
-        await client.invalidate(tag: QueryTag("users"))
+        try await client.invalidate(tag: QueryTag("users"))
         try? await Task.sleep(for: .milliseconds(250))
         let after = await counter.value()
 
@@ -48,7 +48,7 @@ final class QueryObserverStressTests: XCTestCase {
         let key = TestUserQuery(userId: 9_999)
         let observer = client.query(
             key,
-            options: .init(staleTime: .hours(1), cacheTime: .hours(1), retryCount: 1),
+            options: .init(staleTime: .hours(1), cacheTime: .hours(1), retryAttempts: 1),
             fetcher: {
                 try await Task.sleep(for: .seconds(1))
                 let n = await counter.incrementAndGet()

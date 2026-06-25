@@ -19,7 +19,7 @@ struct PostsListView: View {
 
     var body: some View {
             List {
-                switch posts.state.result {
+                switch posts.result {
                 case .idle:
                     Text("Initializing...")
                         .foregroundStyle(.secondary)
@@ -38,7 +38,7 @@ struct PostsListView: View {
 
                 case .error(let error):
                     ErrorView(error: error) {
-                        Task { await posts.refetch() }
+                        Task { _ = try? await $posts.refetch() }
                     }
                 }
             }
@@ -46,12 +46,12 @@ struct PostsListView: View {
                 PostDetailView(postId: post.id)
             }
             .refreshable {
-                await posts.refetch()
+                _ = try? await $posts.refetch()
             }
             .toolbar {
                 ToolbarItem(placement: .primaryAction) {
                     HStack {
-                        if posts.state.isFetching {
+                        if posts.isFetching {
                             ProgressView()
                         }
                         Button {
@@ -128,7 +128,7 @@ struct PostDetailView: View {
     @Environment(\.queryClient) private var client
     @State private var showingAddComment = false
 
-    @Query private var post: QueryObserver<PostQuery>
+    @Query<PostQuery> private var post: QueryState<Post>
 
     init(postId: Int) {
         self.postId = postId
@@ -139,7 +139,7 @@ struct PostDetailView: View {
 
     var body: some View {
         List {
-            switch post.state.result {
+            switch post.result {
             case .idle, .loading:
                 Section {
                     PostDetailPlaceholder()
@@ -160,14 +160,14 @@ struct PostDetailView: View {
             case .error(let error):
                 Section {
                     ErrorView(error: error) {
-                        Task { await post.refetch() }
+                        Task { _ = try? await $post.refetch() }
                     }
                 }
             }
         }
         .navigationTitle("Post")
         .refreshable {
-            await post.refetch()
+            _ = try? await $post.refetch()
         }
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
@@ -185,17 +185,17 @@ struct PostDetailView: View {
 
     private func handleLike() async {
         // Optimistic update
-        if var currentPost = post.state.data {
+        if var currentPost = post.data {
             currentPost.likes += 1
-            await client.setQueryData(PostQuery(postId: postId), data: currentPost)
+            try? await client.setQueryData(PostQuery(postId: postId), data: currentPost)
         }
 
         do {
             let updatedPost = try await server.likePost(id: postId)
-            await client.setQueryData(PostQuery(postId: postId), data: updatedPost)
+            try await client.setQueryData(PostQuery(postId: postId), data: updatedPost)
         } catch {
             // Revert on error by refetching
-            await post.refetch()
+            _ = try? await $post.refetch()
         }
     }
 }
@@ -203,7 +203,7 @@ struct PostDetailView: View {
 struct CommentsSection: View {
     let postId: Int
 
-    @Query private var comments: QueryObserver<PostCommentsQuery>
+    @Query<PostCommentsQuery> private var comments: QueryState<[Comment]>
 
     init(postId: Int) {
         self.postId = postId
@@ -213,9 +213,9 @@ struct CommentsSection: View {
     }
 
     var body: some View {
-        CommentsList(commentsState: comments.state)
+        CommentsList(commentsState: comments)
             .refreshable {
-                await comments.refetch()
+                _ = try? await $comments.refetch()
             }
     }
 }

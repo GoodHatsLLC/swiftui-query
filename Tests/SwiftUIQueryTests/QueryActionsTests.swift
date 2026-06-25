@@ -11,7 +11,7 @@ final class QueryActionsTests: XCTestCase {
         let key = TestUserQuery(userId: 42)
         let observer = client.query(
             key,
-            options: .init(staleTime: .seconds(0), retryCount: 1),
+            options: .init(staleTime: .seconds(0), retryAttempts: 1),
             fetcher: {
                 let next = await counter.incrementAndGet()
                 return TestUser(id: 42, name: "Fetch \(next)")
@@ -20,18 +20,18 @@ final class QueryActionsTests: XCTestCase {
         observer.startObserving()
 
         try await eventually(timeout: 15.0) {
-            let cached = try? await cache.get(key: key.cacheKey, as: TestUser.self)
+            let cached = try? await cache.get(storageKey: key.storageKey, as: TestUser.self)
             return cached?.data.name == "Fetch 1"
         }
 
         let actions = QueryActions(observer: observer, client: client, key: key)
-        await actions.setData(TestUser(id: 42, name: "Manual"))
-        let manual = await actions.getData()
+        try await actions.setData(TestUser(id: 42, name: "Manual"))
+        let manual = try await actions.getData()
         XCTAssertEqual(manual?.name, "Manual")
 
-        await actions.invalidate()
+        try await actions.invalidate()
         try await eventually(timeout: 15.0) {
-            let cached = try? await cache.get(key: key.cacheKey, as: TestUser.self)
+            let cached = try? await cache.get(storageKey: key.storageKey, as: TestUser.self)
             return cached?.data.name == "Fetch 2"
         }
     }

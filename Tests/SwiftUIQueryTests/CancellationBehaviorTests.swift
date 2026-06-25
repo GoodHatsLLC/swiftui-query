@@ -10,7 +10,7 @@ final class CancellationBehaviorTests: XCTestCase {
         let key = "cancel:observe"
 
         try await cache.set(
-            key: key,
+            storageKey: key,
             data: TestUser(id: 1, name: "Seeded"),
             tags: [QueryTag("users")],
             staleTime: .hours(1),
@@ -23,7 +23,7 @@ final class CancellationBehaviorTests: XCTestCase {
         let task = Task {
             defer { finished.fulfill() }
             var didStart = false
-            for await entry in await cache.observe(key: key) {
+            for await entry in await cache.observe(storageKey: key) {
                 if entry != nil, !didStart {
                     didStart = true
                     started.fulfill()
@@ -48,7 +48,7 @@ final class CancellationBehaviorTests: XCTestCase {
     func testCancellingBackgroundFetchDoesNotSetErrorOrClearCachedData() async throws {
         let configuration = CacheDatabaseConfiguration.inMemory
         let dbPool = try createDatabasePool(configuration: configuration)
-        let cache = QueryCache(dbPool: dbPool)
+        let cache = QueryCache(storage: GRDBCacheStorage(pool: dbPool))
 
         let lifecycle = AppLifecycleMonitor(observeSystemNotifications: false)
         let connectivity = ConnectivityMonitor(startMonitoring: false, initialStatus: .satisfied)
@@ -62,9 +62,9 @@ final class CancellationBehaviorTests: XCTestCase {
         let seeded = TestUser(id: 987, name: "Seeded")
 
         try await cache.set(
-            key: key.cacheKey,
+            storageKey: key.storageKey,
             data: seeded,
-            tags: key.tags,
+            tags: key.cacheTags,
             staleTime: .hours(1),
             cacheTime: .hours(1)
         )
@@ -72,13 +72,13 @@ final class CancellationBehaviorTests: XCTestCase {
         // Force time-based staleness without toggling invalidation.
         _ = try await dbPool.write { db in
             try QueryCacheEntry
-                .filter(QueryCacheEntry.Columns.cacheKey == key.cacheKey)
+                .filter(QueryCacheEntry.Columns.cacheKey == key.storageKey)
                 .updateAll(db, QueryCacheEntry.Columns.staleAt.set(to: Date.distantPast))
         }
 
         let observer = client.query(
             key,
-            options: .init(staleTime: .hours(1), cacheTime: .hours(1), retryCount: 1),
+            options: .init(staleTime: .hours(1), cacheTime: .hours(1), retryAttempts: 1),
             fetcher: {
                 // Make this cancellable and long enough that the test can cancel.
                 try await Task.sleep(for: .seconds(2))
@@ -106,7 +106,7 @@ final class CancellationBehaviorTests: XCTestCase {
     func testURLSessionCancellationIsNotSurfacedAsError() async throws {
         let configuration = CacheDatabaseConfiguration.inMemory
         let dbPool = try createDatabasePool(configuration: configuration)
-        let cache = QueryCache(dbPool: dbPool)
+        let cache = QueryCache(storage: GRDBCacheStorage(pool: dbPool))
 
         let lifecycle = AppLifecycleMonitor(observeSystemNotifications: false)
         let connectivity = ConnectivityMonitor(startMonitoring: false, initialStatus: .satisfied)
@@ -120,7 +120,7 @@ final class CancellationBehaviorTests: XCTestCase {
 
         let observer = client.query(
             key,
-            options: .init(staleTime: .hours(1), cacheTime: .hours(1), retryCount: 1),
+            options: .init(staleTime: .hours(1), cacheTime: .hours(1), retryAttempts: 1),
             fetcher: {
                 throw URLError(.cancelled)
             }
@@ -144,7 +144,7 @@ final class CancellationBehaviorTests: XCTestCase {
     func testCancellationDoesNotOverwriteCachedData() async throws {
         let configuration = CacheDatabaseConfiguration.inMemory
         let dbPool = try createDatabasePool(configuration: configuration)
-        let cache = QueryCache(dbPool: dbPool)
+        let cache = QueryCache(storage: GRDBCacheStorage(pool: dbPool))
 
         let lifecycle = AppLifecycleMonitor(observeSystemNotifications: false)
         let connectivity = ConnectivityMonitor(startMonitoring: false, initialStatus: .satisfied)
@@ -158,16 +158,16 @@ final class CancellationBehaviorTests: XCTestCase {
         let seeded = TestUser(id: 333, name: "Cached")
 
         try await cache.set(
-            key: key.cacheKey,
+            storageKey: key.storageKey,
             data: seeded,
-            tags: key.tags,
+            tags: key.cacheTags,
             staleTime: .hours(1),
             cacheTime: .hours(1)
         )
 
         let observer = client.query(
             key,
-            options: .init(staleTime: .hours(1), cacheTime: .hours(1), retryCount: 1),
+            options: .init(staleTime: .hours(1), cacheTime: .hours(1), retryAttempts: 1),
             fetcher: {
                 throw URLError(.cancelled)
             }
@@ -179,7 +179,7 @@ final class CancellationBehaviorTests: XCTestCase {
         }
 
         // Force a refetch that will fail with cancellation
-        await observer.refetch()
+        _ = try? await observer.refetch()
 
         // Cached data must be preserved
         XCTAssertEqual(observer.state.data?.name, "Cached")
@@ -190,7 +190,7 @@ final class CancellationBehaviorTests: XCTestCase {
     func testSuccessfulFetchClearsCancellationState() async throws {
         let configuration = CacheDatabaseConfiguration.inMemory
         let dbPool = try createDatabasePool(configuration: configuration)
-        let cache = QueryCache(dbPool: dbPool)
+        let cache = QueryCache(storage: GRDBCacheStorage(pool: dbPool))
 
         let lifecycle = AppLifecycleMonitor(observeSystemNotifications: false)
         let connectivity = ConnectivityMonitor(startMonitoring: false, initialStatus: .satisfied)
@@ -205,7 +205,7 @@ final class CancellationBehaviorTests: XCTestCase {
         let shouldCancel = CancellationGate(initialValue: true)
         let observer = client.query(
             key,
-            options: .init(staleTime: .hours(1), cacheTime: .hours(1), retryCount: 1),
+            options: .init(staleTime: .hours(1), cacheTime: .hours(1), retryAttempts: 1),
             fetcher: {
                 if await shouldCancel.value() {
                     throw CancellationError()
@@ -222,7 +222,7 @@ final class CancellationBehaviorTests: XCTestCase {
 
         // Now fetch successfully
         await shouldCancel.set(false)
-        await observer.refetch()
+        _ = try await observer.refetch()
 
         try await eventually(timeout: 2.0) {
             observer.state.data != nil

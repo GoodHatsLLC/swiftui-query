@@ -138,7 +138,7 @@ extension QueryCacheEntry {
             .filter(Columns.expiresAt == nil || Columns.expiresAt > now)
             .fetchAll(db)
 
-        return candidates.filter { matches(tag: tag, encodedTags: $0.tags) }
+        return candidates.filter { $0.decodedTags.containsMatch(for: tag) }
     }
     
     /// Get all cache keys matching a tag prefix
@@ -152,7 +152,7 @@ extension QueryCacheEntry {
             .fetchAll(db)
 
         return candidates
-            .filter { matches(tag: tag, encodedTags: $0.tags) }
+            .filter { $0.decodedTags.containsMatch(for: tag) }
             .map(\.cacheKey)
     }
     
@@ -161,7 +161,7 @@ extension QueryCacheEntry {
     public static func invalidate(tag: QueryTag, in db: Database) throws -> Int {
         let entries = try QueryCacheEntry.fetchAll(db)
         let ids: [Int64] = entries.compactMap { entry -> Int64? in
-            guard matches(tag: tag, encodedTags: entry.tags) else { return nil }
+            guard entry.decodedTags.containsMatch(for: tag) else { return nil }
             return entry.id
         }
 
@@ -197,13 +197,33 @@ extension QueryCacheEntry {
             .deleteAll(db)
     }
 
-    private static func matches(tag: QueryTag, encodedTags: String) -> Bool {
-        // Delegates to the shared, backend-agnostic matcher so every backend
-        // uses one matching primitive.
-        TagMatching.matches(
-            tag: tag,
-            tagSegments: TagMatching.decodeSegments(fromJSON: encodedTags)
-        )
+    var decodedTags: Set<QueryTag> {
+        Set(Self.decodeSegments(fromJSON: tags).map { QueryTag(segments: $0) })
+    }
+
+    static func encodeTags(_ tags: Set<QueryTag>) -> String {
+        let normalized = tags
+            .map(\.segments)
+            .sorted { lhs, rhs in
+                lhs.joined(separator: "\u{001F}") < rhs.joined(separator: "\u{001F}")
+            }
+
+        let data = try? JSONEncoder().encode(normalized)
+        return data.flatMap { String(data: $0, encoding: .utf8) } ?? "[]"
+    }
+
+    private static func decodeSegments(fromJSON json: String) -> [[String]] {
+        guard let data = json.data(using: .utf8) else { return [] }
+
+        if let nested = try? JSONDecoder().decode([[String]].self, from: data) {
+            return nested
+        }
+
+        if let flat = try? JSONDecoder().decode([String].self, from: data) {
+            return flat.map { [$0] }
+        }
+
+        return []
     }
 }
 

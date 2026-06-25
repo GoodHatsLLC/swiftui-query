@@ -3,18 +3,20 @@ import SwiftUIQuery
 
 @main
 struct TestApp: App {
+    private static let queryClient = try! QueryClient(
+        storage: .inMemory,
+        defaultOptions: QueryOptions(
+            staleTime: .seconds(30),
+            retryAttempts: 2,
+            retryDelay: .seconds(1)
+        )
+    )
+
     @State private var server = MockServer(configuration: .init(latencyRange: 300...800))
 
     var body: some Scene {
         WindowGroup {
-            QueryClientProvider(
-                storage: .inMemory,
-                defaultOptions: QueryOptions(
-                    staleTime: .seconds(30),
-                    retryCount: 2,
-                    retryDelay: .seconds(1)
-                )
-            ) {
+            QueryClientProvider(client: Self.queryClient) {
                 ContentView()
             }
             .mockServer(server)

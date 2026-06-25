@@ -1,8 +1,8 @@
 import Foundation
 
-/// File-based ``CacheStorage`` that persists one Codable file per cache key.
+/// File-based ``CacheStorage`` that persists one Codable file per derived storage key.
 ///
-/// Each record is stored at `<directory>/<sha256(cacheKey)>.json`. Hashing the
+/// Each record is stored at `<directory>/<sha256(storageKey)>.json`. Hashing the
 /// key avoids filesystem-illegal characters and path-length limits. Writes are
 /// atomic (`Data.write(options: .atomic)` → write-aux-then-rename), so a crash
 /// mid-write cannot leave a torn file at the real path.
@@ -66,56 +66,55 @@ struct CodableFileCacheStorage: CacheStorage {
 
     private func write(_ record: CacheRecord) throws {
         let data = try Self.encoder.encode(record)
-        try data.write(to: fileURL(for: record.cacheKey), options: .atomic)
+        try data.write(to: fileURL(for: record.storageKey), options: .atomic)
     }
 
     // MARK: - Reads
 
-    public func read(key: String, now: Date) async throws -> CacheRecord? {
-        guard let record = decodeRecord(at: fileURL(for: key)) else { return nil }
+    public func read(storageKey: String, now: Date) async throws -> CacheRecord? {
+        guard let record = decodeRecord(at: fileURL(for: storageKey)) else { return nil }
         return record.isExpired(at: now) ? nil : record
     }
 
-    public func readIgnoringExpiry(key: String) async throws -> CacheRecord? {
-        decodeRecord(at: fileURL(for: key))
+    public func readIgnoringExpiry(storageKey: String) async throws -> CacheRecord? {
+        decodeRecord(at: fileURL(for: storageKey))
     }
 
-    public func exists(key: String, now: Date) async throws -> Bool {
-        guard let record = decodeRecord(at: fileURL(for: key)) else { return false }
+    public func exists(storageKey: String, now: Date) async throws -> Bool {
+        guard let record = decodeRecord(at: fileURL(for: storageKey)) else { return false }
         return !record.isExpired(at: now)
     }
 
     // MARK: - Writes
 
     public func upsert(_ record: CacheRecord) async throws {
-        var record = record
-        if let existing = decodeRecord(at: fileURL(for: record.cacheKey)) {
-            record.createdAt = existing.createdAt   // preserve original creation time
+        let recordToWrite: CacheRecord
+        if let existing = decodeRecord(at: fileURL(for: record.storageKey)) {
+            recordToWrite = record.withCreatedAt(existing.createdAt)
+        } else {
+            recordToWrite = record
         }
-        try write(record)
+        try write(recordToWrite)
     }
 
     @discardableResult
     public func invalidate(tag: QueryTag, now: Date) async throws -> [String] {
         var matched: [String] = []
         for (_, record) in allRecords()
-        where TagMatching.matches(tag: tag, tagSegments: record.tagSegments) {
-            var updated = record
-            updated.isInvalidated = true
-            try write(updated)
-            matched.append(record.cacheKey)   // include expired (fix #7)
+        where record.tags.containsMatch(for: tag) {
+            try write(record.invalidated())
+            matched.append(record.storageKey)   // include expired (fix #7)
         }
         return matched
     }
 
-    public func markStale(key: String) async throws {
-        guard var record = decodeRecord(at: fileURL(for: key)) else { return }
-        record.isInvalidated = true
-        try write(record)
+    public func markStale(storageKey: String) async throws {
+        guard let record = decodeRecord(at: fileURL(for: storageKey)) else { return }
+        try write(record.invalidated())
     }
 
-    public func remove(key: String) async throws {
-        try? fileManager.removeItem(at: fileURL(for: key))
+    public func remove(storageKey: String) async throws {
+        try? fileManager.removeItem(at: fileURL(for: storageKey))
     }
 
     public func clear() async throws {
@@ -129,7 +128,7 @@ struct CodableFileCacheStorage: CacheStorage {
         var deleted: [String] = []
         for (url, record) in allRecords() where record.isExpired(at: now) {
             try? fileManager.removeItem(at: url)
-            deleted.append(record.cacheKey)
+            deleted.append(record.storageKey)
         }
         return deleted
     }

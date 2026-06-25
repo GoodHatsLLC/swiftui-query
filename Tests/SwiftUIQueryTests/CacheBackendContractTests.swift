@@ -27,51 +27,51 @@ class CacheBackendContractTests: XCTestCase {
     func testSetAndGet() async throws {
         let cache = try makeCache()
         try await cache.set(
-            key: "user:1", data: TestUser(id: 1, name: "Ada"),
+            storageKey: "user:1", data: TestUser(id: 1, name: "Ada"),
             tags: [QueryTag("users")], staleTime: .hours(1), cacheTime: .hours(1)
         )
-        let result = try await cache.get(key: "user:1", as: TestUser.self)
+        let result = try await cache.get(storageKey: "user:1", as: TestUser.self)
         XCTAssertEqual(result?.data, TestUser(id: 1, name: "Ada"))
         XCTAssertEqual(result?.isStale, false)
     }
 
     func testGetNonExistentReturnsNil() async throws {
         let cache = try makeCache()
-        let result = try await cache.get(key: "missing", as: TestUser.self)
+        let result = try await cache.get(storageKey: "missing", as: TestUser.self)
         XCTAssertNil(result)
     }
 
     func testExists() async throws {
         let cache = try makeCache()
-        let before = try await cache.exists(key: "user:1")
+        let before = try await cache.exists(storageKey: "user:1")
         XCTAssertFalse(before)
         try await cache.set(
-            key: "user:1", data: TestUser(id: 1, name: "Ada"),
+            storageKey: "user:1", data: TestUser(id: 1, name: "Ada"),
             tags: [QueryTag("users")], staleTime: .hours(1), cacheTime: .hours(1)
         )
-        let after = try await cache.exists(key: "user:1")
+        let after = try await cache.exists(storageKey: "user:1")
         XCTAssertTrue(after)
     }
 
     func testRemove() async throws {
         let cache = try makeCache()
         try await cache.set(
-            key: "user:1", data: TestUser(id: 1, name: "Ada"),
+            storageKey: "user:1", data: TestUser(id: 1, name: "Ada"),
             tags: [QueryTag("users")], staleTime: .hours(1), cacheTime: .hours(1)
         )
-        try await cache.remove(key: "user:1")
-        let result = try await cache.get(key: "user:1", as: TestUser.self)
+        try await cache.remove(storageKey: "user:1")
+        let result = try await cache.get(storageKey: "user:1", as: TestUser.self)
         XCTAssertNil(result)
     }
 
     func testClear() async throws {
         let cache = try makeCache()
         try await cache.set(
-            key: "user:1", data: TestUser(id: 1, name: "Ada"),
+            storageKey: "user:1", data: TestUser(id: 1, name: "Ada"),
             tags: [QueryTag("users")], staleTime: .hours(1), cacheTime: .hours(1)
         )
         try await cache.set(
-            key: "user:2", data: TestUser(id: 2, name: "Bea"),
+            storageKey: "user:2", data: TestUser(id: 2, name: "Bea"),
             tags: [QueryTag("users")], staleTime: .hours(1), cacheTime: .hours(1)
         )
         try await cache.clear()
@@ -82,14 +82,14 @@ class CacheBackendContractTests: XCTestCase {
     func testUpsertPreservesCreatedAtAndReplacesData() async throws {
         let cache = try makeCache()
         try await cache.set(
-            key: "user:1", data: TestUser(id: 1, name: "Ada"),
+            storageKey: "user:1", data: TestUser(id: 1, name: "Ada"),
             tags: [QueryTag("users")], staleTime: .hours(1), cacheTime: .hours(1)
         )
         try await cache.set(
-            key: "user:1", data: TestUser(id: 1, name: "Ada Lovelace"),
+            storageKey: "user:1", data: TestUser(id: 1, name: "Ada Lovelace"),
             tags: [QueryTag("users")], staleTime: .hours(1), cacheTime: .hours(1)
         )
-        let result = try await cache.get(key: "user:1", as: TestUser.self)
+        let result = try await cache.get(storageKey: "user:1", as: TestUser.self)
         XCTAssertEqual(result?.data.name, "Ada Lovelace")
         let stats = try await cache.stats()
         XCTAssertEqual(stats.totalEntries, 1, "upsert must not duplicate the key")
@@ -100,25 +100,25 @@ class CacheBackendContractTests: XCTestCase {
     func testInvalidateByTagMarksStale() async throws {
         let cache = try makeCache()
         try await cache.set(
-            key: "user:1", data: TestUser(id: 1, name: "Ada"),
+            storageKey: "user:1", data: TestUser(id: 1, name: "Ada"),
             tags: [QueryTag("users"), QueryTag("users", "1")],
             staleTime: .hours(1), cacheTime: .hours(1)
         )
         let keys = try await cache.invalidate(tag: QueryTag("users"))
         XCTAssertTrue(keys.contains("user:1"))
-        let result = try await cache.get(key: "user:1", as: TestUser.self)
+        let result = try await cache.get(storageKey: "user:1", as: TestUser.self)
         XCTAssertEqual(result?.isStale, true)
     }
 
     func testHierarchicalInvalidationCascades() async throws {
         let cache = try makeCache()
         try await cache.set(
-            key: "user:1", data: TestUser(id: 1, name: "Ada"),
+            storageKey: "user:1", data: TestUser(id: 1, name: "Ada"),
             tags: [QueryTag("users"), QueryTag("users", "1")],
             staleTime: .hours(1), cacheTime: .hours(1)
         )
         try await cache.set(
-            key: "user:1:posts", data: TestUser(id: 9, name: "Post"),
+            storageKey: "user:1:posts", data: TestUser(id: 9, name: "Post"),
             tags: [QueryTag("users", "1", "posts")],
             staleTime: .hours(1), cacheTime: .hours(1)
         )
@@ -131,7 +131,7 @@ class CacheBackendContractTests: XCTestCase {
     func testInvalidateDoesNotCrossMatchSiblingPaths() async throws {
         let cache = try makeCache()
         try await cache.set(
-            key: "post:1", data: TestUser(id: 1, name: "P"),
+            storageKey: "post:1", data: TestUser(id: 1, name: "P"),
             tags: [QueryTag("posts", "1")], staleTime: .hours(1), cacheTime: .hours(1)
         )
         // "posts.123" must NOT be matched by invalidating "users".
@@ -146,24 +146,24 @@ class CacheBackendContractTests: XCTestCase {
         let clock = QueryClock(now: { now.withLock { $0 } })
         let cache = try makeCache(clock: clock)
         try await cache.set(
-            key: "user:1", data: TestUser(id: 1, name: "Ada"),
+            storageKey: "user:1", data: TestUser(id: 1, name: "Ada"),
             tags: [QueryTag("users")], staleTime: .seconds(10), cacheTime: .seconds(10)
         )
-        let present = try await cache.get(key: "user:1", as: TestUser.self)
+        let present = try await cache.get(storageKey: "user:1", as: TestUser.self)
         XCTAssertNotNil(present)
 
         now.withLock { $0 = $0.addingTimeInterval(60) }   // past expiry
-        let afterExpiry = try await cache.get(key: "user:1", as: TestUser.self)
+        let afterExpiry = try await cache.get(storageKey: "user:1", as: TestUser.self)
         XCTAssertNil(afterExpiry)
 
         // Stale-while-revalidate fallback still surfaces the expired data.
-        let stale = try await cache.getIncludingExpired(key: "user:1", as: TestUser.self)
+        let stale = try await cache.getIncludingExpired(storageKey: "user:1", as: TestUser.self)
         XCTAssertEqual(stale?.data, TestUser(id: 1, name: "Ada"))
         XCTAssertEqual(stale?.isStale, true)
 
         let deleted = try await cache.collectGarbage()
         XCTAssertEqual(deleted, 1)
-        let afterGC = try await cache.getIncludingExpired(key: "user:1", as: TestUser.self)
+        let afterGC = try await cache.getIncludingExpired(storageKey: "user:1", as: TestUser.self)
         XCTAssertNil(afterGC)
     }
 
@@ -172,10 +172,10 @@ class CacheBackendContractTests: XCTestCase {
     func testObserveEmitsInitialValue() async throws {
         let cache = try makeCache()
         try await cache.set(
-            key: "user:1", data: TestUser(id: 1, name: "Init"),
+            storageKey: "user:1", data: TestUser(id: 1, name: "Init"),
             tags: [QueryTag("users")], staleTime: .hours(1), cacheTime: .hours(1)
         )
-        let stream = await cache.observe(key: "user:1")
+        let stream = await cache.observe(storageKey: "user:1")
         let received = expectation(description: "initial value delivered")
         let task = Task {
             for await record in stream {
@@ -191,7 +191,7 @@ class CacheBackendContractTests: XCTestCase {
 
     func testObserveEmitsOnWrite() async throws {
         let cache = try makeCache()
-        let stream = await cache.observe(key: "user:1")
+        let stream = await cache.observe(storageKey: "user:1")
         let updated = expectation(description: "write delivered")
         let task = Task {
             for await record in stream {
@@ -202,7 +202,7 @@ class CacheBackendContractTests: XCTestCase {
             }
         }
         try await cache.set(
-            key: "user:1", data: TestUser(id: 1, name: "Written"),
+            storageKey: "user:1", data: TestUser(id: 1, name: "Written"),
             tags: [QueryTag("users")], staleTime: .hours(1), cacheTime: .hours(1)
         )
         await fulfillment(of: [updated], timeout: 1.0)

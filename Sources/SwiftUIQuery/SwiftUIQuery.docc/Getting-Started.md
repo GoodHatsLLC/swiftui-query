@@ -4,18 +4,23 @@ SwiftUIQuery is a small, SwiftUI-first data fetching layer inspired by React Que
 
 ## Define a Query Key
 
-Create a type that conforms to ``QueryKey``. The key provides a stable cache identifier and
-the tags used for invalidation.
+Create a type that conforms to ``QueryKey``. The key provides a structured
+``QueryIdentity`` and any broader tags used for invalidation.
 
 ```swift
 import SwiftUIQuery
+
+extension QueryTag {
+    static let users = QueryTag("users")
+    static func user(_ id: Int) -> QueryTag { QueryTag("users", id) }
+}
 
 struct UserQuery: QueryKey {
     typealias Response = User
     let id: Int
 
-    var cacheKey: String { "users:\(id)" }
-    var tags: Set<QueryTag> { [.users, .user(id)] }
+    var identity: QueryIdentity { QueryIdentity("users", id) }
+    var invalidationTags: Set<QueryTag> { [.users] }
 }
 ```
 
@@ -63,9 +68,11 @@ import SwiftUIQueryGRDB   // only needed for the .grdb backend
 
 @main
 struct MyApp: App {
+    private static let queryClient = try! QueryClient(storage: .grdb(.persistent))
+
     var body: some Scene {
         WindowGroup {
-            QueryClientProvider(storage: .grdb(.persistent)) {
+            QueryClientProvider(client: Self.queryClient) {
                 ContentView()
             }
         }

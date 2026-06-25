@@ -10,7 +10,7 @@ final class QueryCacheObservationTests: XCTestCase {
         let data = TestUser(id: 1, name: "Same")
 
         try await cache.set(
-            key: key,
+            storageKey: key,
             data: data,
             tags: [QueryTag("users")],
             staleTime: .hours(1),
@@ -24,7 +24,7 @@ final class QueryCacheObservationTests: XCTestCase {
         let freshAgainExpectation = expectation(description: "Fresh transition emitted")
 
         let state = Synchronized(ObservationState())
-        let stream = await cache.observe(key: key)
+        let stream = await cache.observe(storageKey: key)
 
         let task = Task {
             for await entry in stream {
@@ -63,7 +63,7 @@ final class QueryCacheObservationTests: XCTestCase {
         // Updating only metadata (same payload hash, same staleness) should not emit.
         state.withLock { $0.phase = .duplicateWindow }
         try await cache.set(
-            key: key,
+            storageKey: key,
             data: data,
             tags: [QueryTag("users")],
             staleTime: .hours(1),
@@ -74,12 +74,12 @@ final class QueryCacheObservationTests: XCTestCase {
 
         // Changing staleness should emit even if payload hash is identical.
         state.withLock { $0.phase = .awaitingStale }
-        try await cache.invalidate(key: key)
+        try await cache.invalidate(storageKey: key)
         await fulfillment(of: [staleExpectation], timeout: 1.0)
 
         // Clearing invalidation should emit again (stale -> fresh).
         try await cache.set(
-            key: key,
+            storageKey: key,
             data: data,
             tags: [QueryTag("users")],
             staleTime: .hours(1),
@@ -97,9 +97,9 @@ final class QueryCacheObservationTests: XCTestCase {
         let dbPool = try createDatabasePool(configuration: configuration)
 
         do {
-            let cache = QueryCache(dbPool: dbPool)
+            let cache = QueryCache(storage: GRDBCacheStorage(pool: dbPool))
             try await cache.set(
-                key: "user:expires",
+                storageKey: "user:expires",
                 data: TestUser(id: 1, name: "Expired"),
                 tags: [QueryTag("users")],
                 staleTime: .hours(1),
@@ -113,8 +113,8 @@ final class QueryCacheObservationTests: XCTestCase {
                 .updateAll(db, QueryCacheEntry.Columns.expiresAt.set(to: Date.distantPast))
         }
 
-        let cache = QueryCache(dbPool: dbPool)
-        let missing = try await cache.get(key: "user:expires", as: TestUser.self)
+        let cache = QueryCache(storage: GRDBCacheStorage(pool: dbPool))
+        let missing = try await cache.get(storageKey: "user:expires", as: TestUser.self)
         XCTAssertNil(missing)
 
         let deleted = try await cache.collectGarbage()

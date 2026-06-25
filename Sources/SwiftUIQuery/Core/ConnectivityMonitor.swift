@@ -6,13 +6,13 @@ import Network
 #endif
 
 /// Emits network connectivity changes used for automatic refetch behavior.
-public actor ConnectivityMonitor: Sendable {
-    public enum Status: Sendable, Equatable {
+actor ConnectivityMonitor: Sendable {
+    enum Status: Sendable, Equatable {
         case satisfied
         case unsatisfied
     }
 
-    public static let shared = ConnectivityMonitor()
+    static let shared = ConnectivityMonitor()
 
     private var status: Status
     private var continuations: [UUID: AsyncStream<Status>.Continuation] = [:]
@@ -27,7 +27,7 @@ public actor ConnectivityMonitor: Sendable {
     nonisolated private let monitor: NWPathMonitor?
     #endif
 
-    public init(startMonitoring: Bool = true, initialStatus: Status = .satisfied) {
+    init(startMonitoring: Bool = true, initialStatus: Status = .satisfied) {
         self.status = initialStatus
 
         let (rawStream, rawContinuation) = AsyncStream<Status>.makeStream()
@@ -69,7 +69,7 @@ public actor ConnectivityMonitor: Sendable {
         rawContinuation.finish()
     }
 
-    public func statuses() -> AsyncStream<Status> {
+    func statuses() -> AsyncStream<Status> {
         AsyncStream { continuation in
             let id = UUID()
             continuations[id] = continuation
@@ -83,7 +83,7 @@ public actor ConnectivityMonitor: Sendable {
         }
     }
 
-    public func currentStatus() -> Status {
+    func currentStatus() -> Status {
         status
     }
 

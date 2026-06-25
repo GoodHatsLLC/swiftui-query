@@ -11,46 +11,45 @@ import Foundation
 /// It deliberately omits GRDB's autoincrement `id` (a storage implementation
 /// detail nothing outside the database reads).
 public struct CacheRecord: Sendable, Equatable, Codable {
-    /// Unique cache key (e.g. `"user:123"`).
-    public var cacheKey: String
+    /// Derived storage key for one exact ``QueryIdentity``.
+    public let storageKey: String
 
     /// SHA-256 hash of `responseData`. Drives observation de-duplication.
-    public var queryHash: String
+    public let queryHash: String
 
     /// JSON-encoded response payload.
-    public var responseData: Data
+    public let responseData: Data
 
     /// Type name of the cached value (debugging aid).
-    public var responseType: String
+    public let responseType: String
 
-    /// Decoded tag hierarchy. Each inner array is one tag's path segments,
-    /// e.g. `[["users"], ["users", "123"]]`.
-    public var tagSegments: [[String]]
+    /// Invalidation tags for this record, including its exact identity tag.
+    public let tags: Set<QueryTag>
 
     /// When the entry was first created.
-    public var createdAt: Date
+    public let createdAt: Date
 
     /// When the entry was last written.
-    public var updatedAt: Date
+    public let updatedAt: Date
 
     /// When the data becomes stale (triggers background refetch). `nil` = never.
-    public var staleAt: Date?
+    public let staleAt: Date?
 
     /// When the entry should be garbage collected. `nil` = never.
-    public var expiresAt: Date?
+    public let expiresAt: Date?
 
     /// HTTP ETag for conditional requests.
-    public var etag: String?
+    public let etag: String?
 
     /// Whether the entry has been explicitly invalidated.
-    public var isInvalidated: Bool
+    public let isInvalidated: Bool
 
     public init(
-        cacheKey: String,
+        storageKey: String,
         queryHash: String,
         responseData: Data,
         responseType: String,
-        tagSegments: [[String]],
+        tags: Set<QueryTag>,
         createdAt: Date = Date(),
         updatedAt: Date = Date(),
         staleAt: Date? = nil,
@@ -58,11 +57,11 @@ public struct CacheRecord: Sendable, Equatable, Codable {
         etag: String? = nil,
         isInvalidated: Bool = false
     ) {
-        self.cacheKey = cacheKey
+        self.storageKey = storageKey
         self.queryHash = queryHash
         self.responseData = responseData
         self.responseType = responseType
-        self.tagSegments = tagSegments
+        self.tags = tags
         self.createdAt = createdAt
         self.updatedAt = updatedAt
         self.staleAt = staleAt
@@ -89,5 +88,37 @@ public struct CacheRecord: Sendable, Equatable, Codable {
     /// Decode the stored response payload to a concrete type.
     public func decode<T: Decodable>(as type: T.Type) throws -> T {
         try JSONDecoder().decode(type, from: responseData)
+    }
+
+    public func withCreatedAt(_ createdAt: Date) -> CacheRecord {
+        CacheRecord(
+            storageKey: storageKey,
+            queryHash: queryHash,
+            responseData: responseData,
+            responseType: responseType,
+            tags: tags,
+            createdAt: createdAt,
+            updatedAt: updatedAt,
+            staleAt: staleAt,
+            expiresAt: expiresAt,
+            etag: etag,
+            isInvalidated: isInvalidated
+        )
+    }
+
+    public func invalidated() -> CacheRecord {
+        CacheRecord(
+            storageKey: storageKey,
+            queryHash: queryHash,
+            responseData: responseData,
+            responseType: responseType,
+            tags: tags,
+            createdAt: createdAt,
+            updatedAt: updatedAt,
+            staleAt: staleAt,
+            expiresAt: expiresAt,
+            etag: etag,
+            isInvalidated: true
+        )
     }
 }

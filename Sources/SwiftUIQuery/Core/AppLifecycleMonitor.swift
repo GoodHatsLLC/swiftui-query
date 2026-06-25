@@ -12,12 +12,12 @@ import UIKit
 ///
 /// This is intentionally SwiftUI-free so it can be used by `QueryObserver` and
 /// tests without requiring SwiftUI.
-public actor AppLifecycleMonitor: Sendable {
-    public enum Event: Sendable, Equatable {
+actor AppLifecycleMonitor: Sendable {
+    enum Event: Sendable, Equatable {
         case didBecomeActive
     }
 
-    public static let shared = AppLifecycleMonitor()
+    static let shared = AppLifecycleMonitor()
 
     private var continuations: [UUID: AsyncStream<Event>.Continuation] = [:]
     private let observerBag = ObserverBag()
@@ -25,7 +25,7 @@ public actor AppLifecycleMonitor: Sendable {
     /// Guards against installing duplicate NotificationCenter observers (#6).
     private var didInstallObservers = false
 
-    public init(observeSystemNotifications: Bool = true) {
+    init(observeSystemNotifications: Bool = true) {
         self.shouldObserveSystemNotifications = observeSystemNotifications
 
         if observeSystemNotifications {
@@ -33,7 +33,7 @@ public actor AppLifecycleMonitor: Sendable {
         }
     }
 
-    public func events() -> AsyncStream<Event> {
+    func events() -> AsyncStream<Event> {
         // `.bufferingNewest(1)` (#4): focus events are idempotent ("app active,
         // consider refetch"), so a suspended consumer should resume to a single
         // pending signal rather than replaying a backlog of `didBecomeActive`.

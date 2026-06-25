@@ -62,12 +62,16 @@ swift run TestApp
 ```swift
 import SwiftUIQuery
 
+extension QueryTag {
+    static let users = QueryTag("users")
+}
+
 struct UserQuery: QueryKey {
     typealias Response = User
     let userId: Int
-    
-    var cacheKey: String { "user:\(userId)" }
-    var tags: Set<QueryTag> { [.users, .user(userId)] }
+
+    var identity: QueryIdentity { QueryIdentity("users", userId) }
+    var invalidationTags: Set<QueryTag> { [.users] }
 }
 ```
 
@@ -91,7 +95,7 @@ struct UserView: View {
             Text(error.localizedDescription)
         }
         .refreshable {
-            await $user.refetch()
+            _ = try? await $user.refetch()
         }
     }
 }
@@ -101,7 +105,7 @@ struct UserView: View {
 
 ```swift
 struct UpdateUserView: View {
-    @Mutation(invalidates: .users) { input in
+    @Mutation(invalidates: .users) { input, _ in
         try await api.updateUser(input)
     } var updateUser
     
@@ -119,20 +123,22 @@ struct UpdateUserView: View {
 
 ## Core Concepts
 
-### Query Keys
+### Query Identity
 
-Query keys uniquely identify cached data and define invalidation relationships:
+Query identities uniquely identify cached data. Invalidation tags define broader
+relationships such as "all users" or "all posts":
 
 ```swift
 struct UserQuery: QueryKey {
     typealias Response = User
     let userId: Int
-    
-    // Unique identifier for this specific query
-    var cacheKey: String { "user:\(userId)" }
-    
-    // Tags for hierarchical invalidation
-    var tags: Set<QueryTag> { [.users, .user(userId)] }
+
+    // Exact identity for this specific query instance.
+    var identity: QueryIdentity { QueryIdentity("users", userId) }
+
+    // Additional parent tags for broad invalidation.
+    // The exact identity tag is included automatically.
+    var invalidationTags: Set<QueryTag> { [.users] }
 }
 ```
 
@@ -147,18 +153,20 @@ let user123 = QueryTag("users", "123")     // Child
 let userPosts = QueryTag("users", "123", "posts")  // Grandchild
 
 // Invalidation cascades down
-await client.invalidate(tag: .users)  // Invalidates ALL user-related queries
-await client.invalidate(tag: .user(123))  // Invalidates user 123 and their posts
+try await client.invalidate(tag: usersTag)  // Invalidates ALL user-related queries
+try await client.invalidate(tag: user123)   // Invalidates user 123 and their posts
 ```
 
-Built-in tag factories:
+You can define tag factories locally for your domain:
 
 ```swift
-QueryTag.users                    // ["users"]
-QueryTag.user(123)               // ["users", "123"]
-QueryTag.userPosts(123)          // ["users", "123", "posts"]
-QueryTag.posts                   // ["posts"]
-QueryTag.post(456)               // ["posts", "456"]
+extension QueryTag {
+    static let users = QueryTag("users")
+    static func user(_ id: Int) -> QueryTag { QueryTag("users", id) }
+    static func userPosts(_ id: Int) -> QueryTag { QueryTag("users", id, "posts") }
+    static let posts = QueryTag("posts")
+    static func post(_ id: Int) -> QueryTag { QueryTag("posts", id) }
+}
 ```
 
 ### Query State
@@ -216,10 +224,10 @@ Configure when data becomes stale:
 Access via projected value:
 
 ```swift
-$query.refetch()      // Manual refetch
-$query.invalidate()   // Invalidate and refetch
-$query.setData(data)  // Update cache directly
-$query.getData()      // Read from cache
+try await $query.refetch()      // Manual refetch
+try await $query.invalidate()   // Invalidate and refetch
+try await $query.setData(data)  // Update cache directly
+try await $query.getData()      // Read from cache
 ```
 
 #### `@Query` With Dynamic Parameters
@@ -230,7 +238,7 @@ declare the wrapper and assign it in `init`:
 ```swift
 struct UserDetailView: View {
     let api: APIClient
-    @Query private var user: QueryObserver<UserQuery>
+    @Query<UserQuery> private var user: QueryState<User>
 
     init(userId: Int, api: APIClient) {
         self.api = api
@@ -247,7 +255,7 @@ struct UserDetailView: View {
 ```swift
 @Mutation(
     invalidates: QueryTag...,
-    mutationFn: (Input) async throws -> Output
+    mutationFn: (Input, EnvironmentValues) async throws -> Output
 ) var mutation
 
 // Execute
@@ -276,27 +284,29 @@ Use the callback initializer for optimistic UI, success/error side effects, and 
 ```swift
 @Mutation(
     invalidates: [.posts],
-    onMutate: { input in
+    onMutate: { input, env in
         // Return any context needed for rollback
+        _ = env
         ["optimisticId": UUID()]
     },
-    onSuccess: { output, input in
-        _ = (output, input)
+    onSuccess: { output, input, env in
+        _ = (output, input, env)
     },
-    onError: { error, input, context in
-        _ = (error, input, context)
+    onError: { error, input, context, env in
+        _ = (error, input, context, env)
     },
-    onSettled: { output, error, input in
-        _ = (output, error, input)
+    onSettled: { output, error, input, env in
+        _ = (output, error, input, env)
     },
-    mutationFn: { input in
+    mutationFn: { input, env in
+        _ = env
         try await api.createPost(input)
     }
 ) var createPost
 ```
 
-Note: `@Mutation` doesn’t receive `EnvironmentValues` like `@Query` does. Prefer passing
-dependencies (e.g. API client) as captured values or view initializer parameters.
+Note: `@Mutation` receives the latest SwiftUI `EnvironmentValues`, matching `@Query`.
+Captured dependencies and view initializer parameters are still fine when they are clearer.
 
 Note: when used in SwiftUI, `@Mutation` invalidates using the environment `queryClient` (via `QueryClientProvider`). If you use `MutationState` directly and configure invalidation tags, you must provide a `QueryClient`.
 
@@ -306,30 +316,30 @@ Access the shared client or inject via environment:
 
 ```swift
 // Shared instance
-await QueryClient.shared.invalidate(tag: .users)
+try await QueryClient.shared.invalidate(tag: .users)
 
 // Environment
 @Environment(\.queryClient) var client
-await client.prefetch(UserQuery(userId: id)) {
+try await client.prefetch(UserQuery(userId: id)) {
     try await api.fetchUser(id: id)
 }
 ```
 
 ```swift
 // Fetching
-client.fetch(key, fetcher:)       // Fetch with cache
+try await client.fetchWithResult(key, fetcher:)  // Fetch with cache result metadata
 client.query(key, fetcher:)       // Create observable query
-client.prefetch(key, fetcher:)    // Background prefetch
+try await client.prefetch(key, fetcher:)         // Background prefetch
 
 // Invalidation
-client.invalidate(tag:)           // Invalidate by tag
-client.invalidate(key:)           // Invalidate specific key
+try await client.invalidate(tag:) // Invalidate by tag
+try await client.invalidate(key)  // Invalidate specific query
 
 // Cache manipulation
-client.setQueryData(key, data:)   // Write to cache
-client.getQueryData(key)          // Read from cache
-client.removeQueryData(key)       // Delete from cache
-client.clear()                    // Clear all cache
+try await client.setQueryData(key, data:)   // Write to cache
+try await client.getQueryData(key)          // Read from cache
+try await client.removeQueryData(key)       // Delete from cache
+try await client.clear()                    // Clear all cache
 ```
 
 ### QueryOptions
@@ -340,7 +350,7 @@ QueryOptions(
     cacheTime: .minutes(5),     // When to garbage collect
     refetchOnFocus: false,      // Refetch when app becomes active
     refetchOnReconnect: true,   // Refetch when connectivity is restored
-    retryCount: 3,              // Retry attempts on failure
+    retryAttempts: 3,              // Retry attempts on failure
     retryDelay: .seconds(1)     // Delay between retries
 )
 ```
@@ -380,10 +390,10 @@ struct UserDashboard: View {
 Button("Like") {
     Task {
         // 1. Save previous state
-        let previous = await $post.getData()
+        let previous = try await $post.getData()
         
         // 2. Optimistic update
-        await $post.setData(post.withLikeCount(post.likeCount + 1))
+        try await $post.setData(post.withLikeCount(post.likeCount + 1))
         
         do {
             // 3. Server mutation
@@ -391,7 +401,7 @@ Button("Like") {
         } catch {
             // 4. Rollback on error
             if let previous {
-                await $post.setData(previous)
+                try? await $post.setData(previous)
             }
         }
     }
@@ -409,7 +419,7 @@ List(users) { user in
     }
     .task {
         // Prefetch on appear
-        await client.prefetch(UserQuery(userId: user.id)) {
+        try? await client.prefetch(UserQuery(userId: user.id)) {
             try await api.fetchUser(id: user.id)
         }
     }
@@ -422,9 +432,9 @@ List(users) { user in
 struct PostsQuery: QueryKey {
     typealias Response = PagedResult<Post>
     let page: Int
-    
-    var cacheKey: String { "posts:page:\(page)" }
-    var tags: Set<QueryTag> { [.posts] }
+
+    var identity: QueryIdentity { QueryIdentity("posts", "page", page) }
+    var invalidationTags: Set<QueryTag> { [.posts] }
 }
 
 struct InfinitePostsView: View {
@@ -450,9 +460,8 @@ Choose a storage backend with `CacheStorageKind`. The default is `.inMemory`.
 ```swift
 import SwiftUIQuery
 
-QueryClient()                                       // .inMemory (default, no disk)
-QueryClient(storage: .inMemory)                     // process-lifetime, no disk
-QueryClient(storage: .codable(directory: url))      // one JSON file per key
+let memoryClient = try QueryClient(storage: .inMemory)
+let fileClient = try QueryClient(storage: .codable(directory: url))
 ```
 
 For SQLite persistence, add the `SwiftUIQueryGRDB` product and import it:
@@ -461,14 +470,14 @@ For SQLite persistence, add the `SwiftUIQueryGRDB` product and import it:
 import SwiftUIQuery
 import SwiftUIQueryGRDB
 
-QueryClient(storage: .grdb(.persistent))            // SQLite, survives launches
-QueryClient(storage: .grdb(.ephemeral))             // SQLite in Caches
+let persistentClient = try QueryClient(storage: .grdb(.persistent))
+let ephemeralClient = try QueryClient(storage: .grdb(.ephemeral))
 ```
 
 You can also supply a fully custom backend via `.custom`:
 
 ```swift
-QueryClient(storage: .custom { MyCacheStorage() })  // any `CacheStorage`
+let customClient = try QueryClient(storage: .custom { MyCacheStorage() })
 ```
 
 ### Custom Cache Location
@@ -476,13 +485,15 @@ QueryClient(storage: .custom { MyCacheStorage() })  // any `CacheStorage`
 ```swift
 import SwiftUIQueryGRDB
 
-QueryClientProvider(
+let client = try QueryClient(
     storage: .grdb(.custom(
         path: "/custom/path/cache.sqlite",
         useWAL: true,
         maxSize: 50_000_000  // 50MB
     ))
-) {
+)
+
+QueryClientProvider(client: client) {
     ContentView()
 }
 ```
@@ -490,7 +501,7 @@ QueryClientProvider(
 ### In-Memory Cache (Testing)
 
 ```swift
-let testClient = QueryClient(
+let testClient = try QueryClient(
     storage: .inMemory,
     defaultOptions: QueryOptions(staleTime: .zero)
 )

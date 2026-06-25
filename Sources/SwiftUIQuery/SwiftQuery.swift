@@ -11,11 +11,11 @@
 @_exported import Foundation
 
 // All public types are declared in their respective files:
-// - Core/QueryKey.swift: QueryKey, AnyQueryKey, QueryOptions
-// - Core/QueryTag.swift: QueryTag
+// - Core/QueryKey.swift: QueryKey, QueryOptions
+// - Core/QueryTag.swift: QueryIdentity, QueryTag
 // - Core/QueryState.swift: QueryStatus, FetchStatus, QueryResult, QueryState
 // - Core/QueryClient.swift: QueryClient
 // - Core/MutationState.swift: MutationStatus, MutationState, MutationBuilder
-// - Cache/QueryCache.swift: CacheResult, QueryCache, CacheStats
-// - Cache/Migrations.swift: CacheDatabaseConfiguration
+// - Cache/CacheStorage.swift: CacheStorage, CacheStorageCounts
+// - Cache/QueryCache.swift: CacheStats
 // - Observation/QueryObserver.swift: QueryObserver

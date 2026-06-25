@@ -5,7 +5,7 @@ import MachO
 import Synchronization
 
 /// Suspend until the current task context is cancelled, then execute the operation.
-public func withCancellationOperation<T: Sendable>(
+func withCancellationOperation<T: Sendable>(
   isolation: isolated (any Actor)? = #isolation,
   operation: () async throws -> T
 ) async rethrows -> T {

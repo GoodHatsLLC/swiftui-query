@@ -13,15 +13,14 @@ final class QueryCachePersistenceTests: XCTestCase {
         let key = TestUserQuery(userId: 4242)
 
         do {
-            let client = QueryClient(storage: storage)
-            await client.setQueryData(key, data: TestUser(id: 4242, name: "Persisted"))
+            let client = try QueryClient(storage: storage)
+            try await client.setQueryData(key, data: TestUser(id: 4242, name: "Persisted"))
         }
 
         do {
-            let client = QueryClient(storage: storage)
-            let loaded = await client.getQueryData(key)
+            let client = try QueryClient(storage: storage)
+            let loaded = try await client.getQueryData(key)
             XCTAssertEqual(loaded?.name, "Persisted")
         }
     }
 }
-

@@ -10,25 +10,25 @@ import Foundation
 /// The tracker maintains a call stack of active invalidations and detects when
 /// a tag or key is re-entered within the same invalidation chain.
 @MainActor
-public final class InvalidationTracker: Sendable {
+final class InvalidationTracker: Sendable {
 
     // MARK: - Configuration
 
     /// Configuration for cycle detection behavior
-    public struct Configuration: Sendable {
+    struct Configuration: Sendable {
         /// Maximum allowed invalidation depth before triggering a warning
-        public var maxDepth: Int
+        var maxDepth: Int
 
         /// Whether to throw an error when a cycle is detected (vs just logging)
-        public var throwOnCycle: Bool
+        var throwOnCycle: Bool
 
         /// Whether to log cycle warnings
-        public var logWarnings: Bool
+        var logWarnings: Bool
 
         /// Custom handler for cycle detection events
-        public var onCycleDetected: (@Sendable (CycleInfo) -> Void)?
+        var onCycleDetected: (@Sendable (CycleInfo) -> Void)?
 
-        public init(
+        init(
             maxDepth: Int = 5,
             throwOnCycle: Bool = true,
             logWarnings: Bool = true,
@@ -40,17 +40,17 @@ public final class InvalidationTracker: Sendable {
             self.onCycleDetected = onCycleDetected
         }
 
-        public static let `default` = Configuration()
+        static let `default` = Configuration()
 
         /// Strict mode: throws on cycles, lower depth limit
-        public static let strict = Configuration(
+        static let strict = Configuration(
             maxDepth: 5,
             throwOnCycle: true,
             logWarnings: true
         )
 
         /// Permissive mode: only logs, higher depth limit
-        public static let permissive = Configuration(
+        static let permissive = Configuration(
             maxDepth: 20,
             throwOnCycle: false,
             logWarnings: true
@@ -60,44 +60,44 @@ public final class InvalidationTracker: Sendable {
     // MARK: - Types
 
     /// Information about a detected cycle
-    public struct CycleInfo: Sendable, CustomStringConvertible {
+    struct CycleInfo: Sendable, CustomStringConvertible {
         /// The tag or key that was re-entered
-        public let trigger: String
+        let trigger: String
 
         /// The full invalidation chain leading to the cycle
-        public let chain: [InvalidationEntry]
+        let chain: [InvalidationEntry]
 
         /// Current depth when cycle was detected
-        public let depth: Int
+        let depth: Int
 
         /// Timestamp of detection
-        public let detectedAt: Date
+        let detectedAt: Date
 
-        public var description: String {
+        var description: String {
             let chainStr = chain.map(\.description).joined(separator: " → ")
             return "Cycle detected: \(trigger) (depth: \(depth))\nChain: \(chainStr) → [\(trigger)]"
         }
     }
 
     /// An entry in the invalidation chain
-    public struct InvalidationEntry: Sendable, CustomStringConvertible {
-        public enum Kind: Sendable {
+    struct InvalidationEntry: Sendable, CustomStringConvertible {
+        enum Kind: Sendable {
             case tag(QueryTag)
             case key(String)
         }
 
-        public let kind: Kind
-        public let timestamp: Date
-        public let source: String?
+        let kind: Kind
+        let timestamp: Date
+        let source: String?
 
-        public var identifier: String {
+        var identifier: String {
             switch kind {
             case .tag(let tag): return "tag:\(tag.description)"
             case .key(let key): return "key:\(key)"
             }
         }
 
-        public var description: String {
+        var description: String {
             if let source {
                 return "\(identifier) (from: \(source))"
             }
@@ -106,11 +106,11 @@ public final class InvalidationTracker: Sendable {
     }
 
     /// Errors thrown by the tracker
-    public enum TrackerError: LocalizedError {
+    enum TrackerError: LocalizedError {
         case cycleDetected(CycleInfo)
         case maxDepthExceeded(depth: Int, maxDepth: Int, chain: [InvalidationEntry])
 
-        public var errorDescription: String? {
+        var errorDescription: String? {
             switch self {
             case .cycleDetected(let info):
                 return "Invalidation cycle detected: \(info.description)"
@@ -124,7 +124,7 @@ public final class InvalidationTracker: Sendable {
     // MARK: - State
 
     /// Current configuration
-    public var configuration: Configuration
+    var configuration: Configuration
 
     /// Instance stack backing the token-based `beginInvalidation`/`endInvalidation`
     /// API. Correct for sequential, single-task use; hardened against out-of-order
@@ -160,18 +160,18 @@ public final class InvalidationTracker: Sendable {
     }
 
     /// Statistics about invalidation tracking
-    public struct Stats: Sendable {
-        public var totalInvalidations: Int = 0
-        public var cyclesDetected: Int = 0
-        public var maxDepthReached: Int = 0
-        public var depthExceededCount: Int = 0
+    struct Stats: Sendable {
+        var totalInvalidations: Int = 0
+        var cyclesDetected: Int = 0
+        var maxDepthReached: Int = 0
+        var depthExceededCount: Int = 0
     }
 
-    public var stats: Stats { _stats }
+    var stats: Stats { _stats }
 
     // MARK: - Initialization
 
-    public init(configuration: Configuration = .default) {
+    init(configuration: Configuration = .default) {
         self.configuration = configuration
     }
 
@@ -185,18 +185,18 @@ public final class InvalidationTracker: Sendable {
     /// - Returns: A token to pass to `endInvalidation`
     /// - Throws: `TrackerError.cycleDetected` if a cycle is detected and `throwOnCycle` is true
     @discardableResult
-    public func beginInvalidation(tag: QueryTag, source: String? = nil) throws -> InvalidationToken {
+    func beginInvalidation(tag: QueryTag, source: String? = nil) throws -> InvalidationToken {
         try beginInvalidation(entry: InvalidationEntry(kind: .tag(tag), timestamp: Date(), source: source))
     }
 
     /// Begin tracking an invalidation by key.
     @discardableResult
-    public func beginInvalidation(key: String, source: String? = nil) throws -> InvalidationToken {
+    func beginInvalidation(key: String, source: String? = nil) throws -> InvalidationToken {
         try beginInvalidation(entry: InvalidationEntry(kind: .key(key), timestamp: Date(), source: source))
     }
 
     /// End tracking an invalidation.
-    public func endInvalidation(_ token: InvalidationToken) {
+    func endInvalidation(_ token: InvalidationToken) {
         guard !token.isNoOp else { return }
 
         // Remove the matching entry from anywhere in the stack so out-of-order
@@ -213,7 +213,7 @@ public final class InvalidationTracker: Sendable {
     /// Execute a block within an invalidation tracking context.
     ///
     /// This is the preferred way to track invalidations as it ensures proper cleanup.
-    public func withInvalidation<T>(
+    func withInvalidation<T>(
         tag: QueryTag,
         source: String? = nil,
         operation: () async throws -> T
@@ -225,7 +225,7 @@ public final class InvalidationTracker: Sendable {
     }
 
     /// Execute a block within an invalidation tracking context (by key).
-    public func withInvalidation<T>(
+    func withInvalidation<T>(
         key: String,
         source: String? = nil,
         operation: () async throws -> T
@@ -237,17 +237,17 @@ public final class InvalidationTracker: Sendable {
     }
 
     /// Check if we're currently in an invalidation chain
-    public var isInvalidating: Bool {
+    var isInvalidating: Bool {
         combinedDepth > 0
     }
 
     /// Current invalidation depth
-    public var currentDepth: Int {
+    var currentDepth: Int {
         combinedDepth
     }
 
     /// Get the current invalidation chain (for debugging)
-    public var currentChain: [InvalidationEntry] {
+    var currentChain: [InvalidationEntry] {
         combinedEntries
     }
 
@@ -256,7 +256,7 @@ public final class InvalidationTracker: Sendable {
     /// Clears the instance stack and statistics. The task-local chain used by
     /// `withInvalidation` is scope-based and unwinds automatically, so it is not
     /// (and need not be) cleared here.
-    public func reset() {
+    func reset() {
         instanceChain.removeAll()
         instanceIdentifiers.removeAll()
         _stats = Stats()
@@ -382,10 +382,10 @@ public final class InvalidationTracker: Sendable {
 // MARK: - Invalidation Token
 
 /// Token returned by `beginInvalidation` to track the invalidation scope
-public struct InvalidationToken: Sendable {
+struct InvalidationToken: Sendable {
     let identifier: String
     let isNoOp: Bool
 
     /// Whether this token represents a skipped invalidation (due to cycle/depth limit)
-    public var wasSkipped: Bool { isNoOp }
+    var wasSkipped: Bool { isNoOp }
 }

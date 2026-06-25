@@ -9,7 +9,7 @@ final class ObserverMutationHardeningTests: XCTestCase {
 
     func testMutateValidatesMissingClientBeforeRunning() async throws {
         let ran = Synchronized(false)
-        let mutation = MutationState<Int, Int>(
+        let mutation = MutationState<Int, Int, Void>(
             mutationFn: { input in
                 ran.withLock { $0 = true }
                 return input + 1
@@ -32,7 +32,7 @@ final class ObserverMutationHardeningTests: XCTestCase {
     // MARK: - #16: reset is not clobbered by a superseded mutation's late completion
 
     func testResetDuringInFlightMutationSurvivesLateCompletion() async throws {
-        let mutation = MutationState<Int, Int>(
+        let mutation = MutationState<Int, Int, Void>(
             mutationFn: { input in
                 try await Task.sleep(for: .milliseconds(300))
                 return input + 1

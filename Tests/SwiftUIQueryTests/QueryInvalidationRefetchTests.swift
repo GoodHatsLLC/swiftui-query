@@ -18,7 +18,7 @@ final class QueryInvalidationRefetchTests: XCTestCase {
 
         let observer = client.query(
             key,
-            options: .init(staleTime: .hours(1), cacheTime: .hours(1), retryCount: 1),
+            options: .init(staleTime: .hours(1), cacheTime: .hours(1), retryAttempts: 1),
             fetcher: {
                 let n = await counter.incrementAndGet()
                 if n >= 2 {
@@ -30,14 +30,14 @@ final class QueryInvalidationRefetchTests: XCTestCase {
         observer.startObserving()
 
         try await eventually(timeout: 2.0) {
-            let cached = try? await cache.get(key: key.cacheKey, as: TestUser.self)
+            let cached = try? await cache.get(storageKey: key.storageKey, as: TestUser.self)
             return cached?.data.name == "Fetch 1"
         }
 
-        await client.invalidate(tag: QueryTag("users"))
+        try await client.invalidate(tag: QueryTag("users"))
 
         try await eventually(timeout: 3.0) {
-            let cached = try? await cache.get(key: key.cacheKey, as: TestUser.self)
+            let cached = try? await cache.get(storageKey: key.storageKey, as: TestUser.self)
             return cached?.data.name == "Fetch 2"
         }
 
@@ -61,7 +61,7 @@ final class QueryInvalidationRefetchTests: XCTestCase {
 
         let observer = client.query(
             key,
-            options: .init(staleTime: .hours(1), cacheTime: .hours(1), retryCount: 1),
+            options: .init(staleTime: .hours(1), cacheTime: .hours(1), retryAttempts: 1),
             fetcher: {
                 let n = await counter.incrementAndGet()
                 if n >= 2 {
@@ -73,14 +73,14 @@ final class QueryInvalidationRefetchTests: XCTestCase {
         observer.startObserving()
 
         try await eventually(timeout: 2.0) {
-            let cached = try? await cache.get(key: key.cacheKey, as: TestUser.self)
+            let cached = try? await cache.get(storageKey: key.storageKey, as: TestUser.self)
             return cached?.data.name == "Fetch 1"
         }
 
-        await client.invalidate(key: key)
+        try await client.invalidate(key)
 
         try await eventually(timeout: 3.0) {
-            let cached = try? await cache.get(key: key.cacheKey, as: TestUser.self)
+            let cached = try? await cache.get(storageKey: key.storageKey, as: TestUser.self)
             return cached?.data.name == "Fetch 2"
         }
 
@@ -106,7 +106,7 @@ final class QueryInvalidationRefetchTests: XCTestCase {
 
         let observer1 = client.query(
             key1,
-            options: .init(staleTime: .hours(1), cacheTime: .hours(1), retryCount: 1),
+            options: .init(staleTime: .hours(1), cacheTime: .hours(1), retryAttempts: 1),
             fetcher: {
                 let n = await counter1.incrementAndGet()
                 if n >= 2 {
@@ -118,7 +118,7 @@ final class QueryInvalidationRefetchTests: XCTestCase {
 
         let observer2 = client.query(
             key2,
-            options: .init(staleTime: .hours(1), cacheTime: .hours(1), retryCount: 1),
+            options: .init(staleTime: .hours(1), cacheTime: .hours(1), retryAttempts: 1),
             fetcher: {
                 let n = await counter2.incrementAndGet()
                 if n >= 2 {
@@ -132,16 +132,16 @@ final class QueryInvalidationRefetchTests: XCTestCase {
         observer2.startObserving()
 
         try await eventually(timeout: 2.0) {
-            let cached1 = try? await cache.get(key: key1.cacheKey, as: TestUser.self)
-            let cached2 = try? await cache.get(key: key2.cacheKey, as: TestUser.self)
+            let cached1 = try? await cache.get(storageKey: key1.storageKey, as: TestUser.self)
+            let cached2 = try? await cache.get(storageKey: key2.storageKey, as: TestUser.self)
             return cached1?.data.name == "User1 1" && cached2?.data.name == "User2 1"
         }
 
-        await client.invalidate(tag: QueryTag("users"))
+        try await client.invalidate(tag: QueryTag("users"))
 
         try await eventually(timeout: 3.0) {
-            let cached1 = try? await cache.get(key: key1.cacheKey, as: TestUser.self)
-            let cached2 = try? await cache.get(key: key2.cacheKey, as: TestUser.self)
+            let cached1 = try? await cache.get(storageKey: key1.storageKey, as: TestUser.self)
+            let cached2 = try? await cache.get(storageKey: key2.storageKey, as: TestUser.self)
             return cached1?.data.name == "User1 2" && cached2?.data.name == "User2 2"
         }
 
@@ -168,7 +168,7 @@ final class QueryInvalidationRefetchTests: XCTestCase {
 
         let observerA = client.query(
             key,
-            options: .init(staleTime: .hours(1), cacheTime: .hours(1), retryCount: 1),
+            options: .init(staleTime: .hours(1), cacheTime: .hours(1), retryAttempts: 1),
             fetcher: {
                 let n = await counterA.incrementAndGet()
                 return TestUser(id: 777, name: "A \(n)")
@@ -177,7 +177,7 @@ final class QueryInvalidationRefetchTests: XCTestCase {
 
         let observerB = client.query(
             key,
-            options: .init(staleTime: .hours(1), cacheTime: .hours(1), retryCount: 1),
+            options: .init(staleTime: .hours(1), cacheTime: .hours(1), retryAttempts: 1),
             fetcher: {
                 let n = await counterB.incrementAndGet()
                 return TestUser(id: 777, name: "B \(n)")
@@ -193,7 +193,7 @@ final class QueryInvalidationRefetchTests: XCTestCase {
             return a == 1 && b == 1
         }
 
-        await client.invalidate(key: key)
+        try await client.invalidate(key)
 
         let a = await counterA.value()
         let b = await counterB.value()
@@ -216,7 +216,7 @@ final class QueryInvalidationRefetchTests: XCTestCase {
 
         let observer = client.query(
             key,
-            options: .init(staleTime: .hours(1), cacheTime: .hours(1), retryCount: 1),
+            options: .init(staleTime: .hours(1), cacheTime: .hours(1), retryAttempts: 1),
             fetcher: {
                 let n = await counter.incrementAndGet()
                 if n == 2 {
@@ -232,7 +232,7 @@ final class QueryInvalidationRefetchTests: XCTestCase {
         }
 
         let startedAt = Date()
-        await client.invalidate(key: key)
+        try await client.invalidate(key)
         let elapsed = Date().timeIntervalSince(startedAt)
 
         let count = await counter.value()

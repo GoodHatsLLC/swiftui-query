@@ -7,14 +7,14 @@ import AsyncAlgorithms
 #endif
 
 @dynamicMemberLookup
-public final class Synchronized<Value>: Sendable {
-  public init(_ value: consuming sending Value) {
+final class Synchronized<Value>: Sendable {
+  init(_ value: consuming sending Value) {
     self.mut = .init(value)
   }
 
   private let mut: Mut<Value>
 
-  public borrowing func withLock<Result, E>(
+  borrowing func withLock<Result, E>(
     _ body: (inout sending Value) throws(E) -> sending Result
   ) throws(E) -> sending Result where E: Error {
     do {
@@ -25,7 +25,7 @@ public final class Synchronized<Value>: Sendable {
   }
 
   @discardableResult
-  public nonisolated func callAsFunction<T>(_ action: (inout Value) -> T) -> T {
+  nonisolated func callAsFunction<T>(_ action: (inout Value) -> T) -> T {
     withLock { state in
       var s = state
       let it = action(&s)
@@ -43,16 +43,16 @@ public final class Synchronized<Value>: Sendable {
     withLock(\.self)[keyPath: path]
   }
 
-  public nonisolated subscript<T: Sendable>(dynamicMember keyPath: WritableKeyPath<Value, T>) -> T {
+  nonisolated subscript<T: Sendable>(dynamicMember keyPath: WritableKeyPath<Value, T>) -> T {
     get { pick(keyPath) }
     set { place(keyPath, value: newValue) }
   }
 
-  public nonisolated subscript<T: Sendable>(dynamicMember keyPath: KeyPath<Value, T>) -> T {
+  nonisolated subscript<T: Sendable>(dynamicMember keyPath: KeyPath<Value, T>) -> T {
     get { pick(keyPath) }
   }
 
-  consuming public func consume<T: Sendable>(_ path: consuming WritableKeyPath<Value, T?>) -> T? {
+  consuming func consume<T: Sendable>(_ path: consuming WritableKeyPath<Value, T?>) -> T? {
     self { state in
       defer { state[keyPath: path] = nil }
       return state[keyPath: path]

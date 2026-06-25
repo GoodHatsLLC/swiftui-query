@@ -46,10 +46,11 @@ public final class QueryObserver<K: QueryKey> {
     private var isStarted = false
     private var isObserving = false  // True once observeCacheChanges() is running
     private var lastObservedStale: Bool?
+    private var storageKey: String { key.storageKey }
 
     // MARK: - Initialization
 
-    public init(
+    init(
         key: K,
         fetcher: @escaping @Sendable () async throws -> K.Response,
         cache: QueryCache,
@@ -77,33 +78,33 @@ public final class QueryObserver<K: QueryKey> {
         guard !isStarted else { return }
         isStarted = true
 
-        client?.registerActiveObserver(self, forKey: key.cacheKey)
+        client?.registerActiveObserver(self, forKey: storageKey)
 
         let cache = cache
-        let cacheKey = key.cacheKey
-        observationTask = Task { @MainActor [weak self, cache, cacheKey] in
+        let identity = key.identity
+        observationTask = Task { @MainActor [weak self, cache, identity] in
             guard let self else { return }
             await self.loadFromCache()
 
             self.isObserving = true
             defer { self.isObserving = false }
 
-            for await entry in await cache.observe(key: cacheKey) {
+            for await entry in await cache.observe(identity: identity) {
                 guard !Task.isCancelled else { break }
 
                 if let entry {
                     do {
-                        let data = try entry.decode(as: K.Response.self)
-                        state.setData(data)
-
                         let isStale = entry.isStale(at: clock.now())
+                        let data = try entry.decode(as: K.Response.self)
+                        state.setData(data, isStale: isStale)
+
                         let previouslyStale = lastObservedStale ?? false
                         lastObservedStale = isStale
 
                         // Avoid infinite fetch loops when staleTime is .zero by
                         // only refreshing on the *transition* from fresh -> stale.
                         if options.staleTime > .zero, !entry.isInvalidated, isStale, !previouslyStale {
-                            await fetchInBackground()
+                            try? await fetchInBackground()
                         } else if entry.isInvalidated, client == nil {
                             // Fix #5 (no-client fallback): with a client, invalidation
                             // refetch is driven authoritatively by
@@ -112,11 +113,11 @@ public final class QueryObserver<K: QueryKey> {
                             // must drive it. De-duped via the in-flight `fetchTask`
                             // guard, and one-shot since the next successful fetch
                             // clears `isInvalidated`.
-                            await fetchInBackground()
+                            try? await fetchInBackground()
                         }
                     } catch {
                         // Decode error - data corrupted, refetch
-                        await fetch(force: true)
+                        _ = try? await fetch(force: true)
                     }
                 }
             }
@@ -132,7 +133,7 @@ public final class QueryObserver<K: QueryKey> {
 
                     switch event {
                     case .didBecomeActive:
-                        await self.refetchForTrigger()
+                        try? await self.refetchForTrigger()
                     }
                 }
             }
@@ -149,7 +150,7 @@ public final class QueryObserver<K: QueryKey> {
                     guard self.isStarted else { break }
 
                     if previousStatus == .unsatisfied, status == .satisfied {
-                        await self.refetchForTrigger()
+                        try? await self.refetchForTrigger()
                     }
                     previousStatus = status
                 }
@@ -170,7 +171,7 @@ public final class QueryObserver<K: QueryKey> {
         connectivityTask?.cancel()
         connectivityTask = nil
 
-        client?.unregisterActiveObserver(self, forKey: key.cacheKey)
+        client?.unregisterActiveObserver(self, forKey: storageKey)
     }
 
     @MainActor
@@ -181,15 +182,15 @@ public final class QueryObserver<K: QueryKey> {
         connectivityTask?.cancel()
         // Eagerly drop our registry entry instead of waiting for the client's
         // lazy cleanup pass (#17).
-        client?.unregisterActiveObserver(self, forKey: key.cacheKey)
+        client?.unregisterActiveObserver(self, forKey: storageKey)
     }
     
     // MARK: - Public Actions
     
     /// Manually trigger a refetch
     @discardableResult
-    public func refetch() async -> K.Response? {
-        await fetch(force: true)
+    public func refetch() async throws -> K.Response {
+        try await fetch(force: true)
     }
 
     /// Invalidation-driven forced refetch used by `QueryClient`. Marks a new
@@ -197,20 +198,20 @@ public final class QueryObserver<K: QueryKey> {
     /// predates the invalidation (#2), then refetches.
     func markInvalidationAndRefetch() async {
         invalidationEpoch &+= 1
-        _ = await fetch(force: true)
+        _ = try? await fetch(force: true)
     }
     
     /// Invalidate and refetch
     ///
     /// Routes through QueryClient to ensure proper cycle detection via InvalidationTracker.
-    public func invalidate() async {
+    public func invalidate() async throws {
         if let client {
             // Route through QueryClient for cycle detection
-            await client.invalidate(key: key, source: "QueryObserver<\(K.self)>")
+            try await client.invalidate(key, source: "QueryObserver<\(K.self)>")
         } else {
             // Fallback: direct cache invalidation (no cycle detection)
-            try? await cache.invalidate(key: key.cacheKey)
-            await refetch()
+            try await cache.invalidate(identity: key.identity)
+            _ = try await refetch()
         }
     }
     
@@ -221,28 +222,28 @@ public final class QueryObserver<K: QueryKey> {
             // Try loading from cache, including expired entries as a stale fallback.
             // This implements stale-while-revalidate even for expired data, ensuring
             // the user sees their previous data immediately while fresh data loads.
-            if let cached = try await cache.getIncludingExpired(key: key.cacheKey, as: K.Response.self) {
-                state.setData(cached.data)
+            if let cached = try await cache.getIncludingExpired(identity: key.identity, as: K.Response.self) {
+                state.setData(cached.data, isStale: cached.isStale)
                 lastObservedStale = cached.isStale
 
                 // Background refetch if data is stale or expired
                 if cached.isStale {
-                    await fetchInBackground()
+                    try? await fetchInBackground()
                 }
             } else {
                 lastObservedStale = false
                 // No cache - fetch immediately
-                await fetch(force: false)
+                _ = try? await fetch(force: false)
             }
         } catch {
             lastObservedStale = false
             // Cache read failed - fetch from network
-            await fetch(force: false)
+            _ = try? await fetch(force: false)
         }
     }
     
     @discardableResult
-    private func fetch(force: Bool) async -> K.Response? {
+    private func fetch(force: Bool) async throws -> K.Response {
         // Deduplicate in-flight fetches. A forced refetch (#2) supersedes an
         // in-flight fetch ONLY when that fetch predates the latest invalidation
         // (`fetchTaskEpoch < invalidationEpoch`) — so an invalidation can't be
@@ -251,7 +252,7 @@ public final class QueryObserver<K: QueryKey> {
         if let task = fetchTask {
             let supersedesStaleInFlight = force && fetchTaskEpoch < invalidationEpoch
             if !supersedesStaleInFlight {
-                return try? await task.value
+                return try await task.value
             }
             task.cancel()
         }
@@ -263,7 +264,7 @@ public final class QueryObserver<K: QueryKey> {
         state.setFetching(true)
 
         let task = Task { [fetcher, options] () throws -> K.Response in
-            let maxAttempts = max(1, options.retryCount)
+            let maxAttempts = max(1, options.retryAttempts + 1)
             var lastError: Error?
 
             for attempt in 0..<maxAttempts {
@@ -302,12 +303,12 @@ public final class QueryObserver<K: QueryKey> {
             // If a later forced fetch superseded us, discard this (now stale)
             // result rather than writing it back over the fresh one. Covers
             // fetchers that swallow cancellation and return anyway.
-            guard fetchGeneration == generation else { return nil }
+                guard fetchGeneration == generation else { throw CancellationError() }
 
             try await cache.set(
-                key: key.cacheKey,
+                identity: key.identity,
                 data: data,
-                tags: key.tags,
+                tags: key.cacheTags,
                 staleTime: options.staleTime,
                 cacheTime: options.cacheTime
             )
@@ -315,7 +316,7 @@ public final class QueryObserver<K: QueryKey> {
             // Only set data directly if observation loop isn't running yet.
             // When observing, the cache change will trigger setData via observeCacheChanges().
             if !isObserving {
-                state.setData(data)
+                state.setData(data, isStale: false)
             }
             return data
         } catch {
@@ -327,7 +328,7 @@ public final class QueryObserver<K: QueryKey> {
                 if fetchGeneration == generation {
                     state.setCancellation(error)
                 }
-                return nil
+                throw error
             }
 
             if state.hasData {
@@ -336,22 +337,22 @@ public final class QueryObserver<K: QueryKey> {
                 state.setError(error)
             }
 
-            return nil
+            throw error
         }
     }
     
-    private func fetchInBackground() async {
-        _ = await fetch(force: false)
+    private func fetchInBackground() async throws {
+        _ = try await fetch(force: false)
     }
 
-    private func refetchForTrigger() async {
+    private func refetchForTrigger() async throws {
         // Avoid piling on background fetches if we're already fetching.
         guard fetchTask == nil else { return }
 
         if state.hasData {
-            await fetchInBackground()
+            try await fetchInBackground()
         } else {
-            _ = await fetch(force: false)
+            _ = try await fetch(force: false)
         }
     }
 }

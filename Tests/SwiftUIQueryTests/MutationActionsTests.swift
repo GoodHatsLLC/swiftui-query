@@ -7,7 +7,7 @@ import XCTest
 @MainActor
 final class MutationActionsTests: XCTestCase {
     func testProjectedValueResetClearsState() async throws {
-        let mutation = MutationState<Int, Int>(
+        let mutation = MutationState<Int, Int, Void>(
             mutationFn: { input in input + 1 }
         )
 

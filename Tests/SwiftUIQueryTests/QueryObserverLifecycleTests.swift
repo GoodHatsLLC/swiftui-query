@@ -8,9 +8,9 @@ final class QueryObserverLifecycleTests: XCTestCase {
 
         let key = TestUserQuery(userId: 123_456)
         try await cache.set(
-            key: key.cacheKey,
+            storageKey: key.storageKey,
             data: TestUser(id: 123_456, name: "Seeded"),
-            tags: key.tags,
+            tags: key.cacheTags,
             staleTime: .hours(1),
             cacheTime: .hours(1)
         )

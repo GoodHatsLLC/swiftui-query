@@ -14,7 +14,7 @@ final class QueryObserverRetryTests: XCTestCase {
             options: .init(
                 staleTime: .hours(1),
                 cacheTime: .hours(1),
-                retryCount: 2,
+                retryAttempts: 2,
                 retryDelay: .milliseconds(1)
             ),
             fetcher: {
@@ -26,7 +26,7 @@ final class QueryObserverRetryTests: XCTestCase {
         observer.startObserving()
 
         try await eventually(timeout: 2.0) {
-            let cached = try? await cache.get(key: key.cacheKey, as: TestUser.self)
+            let cached = try? await cache.get(storageKey: key.storageKey, as: TestUser.self)
             return cached?.data.name == "Success"
         }
         let value = await attempts.value()
@@ -44,7 +44,7 @@ final class QueryObserverRetryTests: XCTestCase {
             options: .init(
                 staleTime: .hours(1),
                 cacheTime: .hours(1),
-                retryCount: 1
+                retryAttempts: 1
             ),
             fetcher: {
                 let n = await attempts.incrementAndGet()
@@ -60,8 +60,8 @@ final class QueryObserverRetryTests: XCTestCase {
             await attempts.value() == 1
         }
 
-        let first = Task { await observer.refetch() }
-        let second = Task { await observer.refetch() }
+        let first = Task { try? await observer.refetch() }
+        let second = Task { try? await observer.refetch() }
         _ = await first.value
         _ = await second.value
 

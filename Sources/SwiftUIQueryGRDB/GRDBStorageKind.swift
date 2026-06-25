@@ -6,7 +6,7 @@ extension CacheStorageKind {
     ///
     /// ```swift
     /// import SwiftUIQueryGRDB
-    /// QueryClient(storage: .grdb(.persistent))
+    /// try QueryClient(storage: .grdb(.persistent))
     /// ```
     public static func grdb(_ location: GRDBLocation) -> CacheStorageKind {
         .custom { try GRDBCacheStorage(configuration: location.configuration) }

@@ -21,8 +21,8 @@ final class SwiftUIIntegrationiOSTests: XCTestCase {
         await lifecycle.ensureSystemObserversInstalledForTesting()
 
         struct TestView: View {
-            @Query
-            private var user: QueryObserver<TestUserQuery>
+            @Query<TestUserQuery>
+            private var user: QueryState<TestUser>
 
             init(counter: Counter) {
                 _user = Query(
@@ -32,7 +32,7 @@ final class SwiftUIIntegrationiOSTests: XCTestCase {
                         cacheTime: .hours(1),
                         refetchOnFocus: true,
                         refetchOnReconnect: false,
-                        retryCount: 1
+                        retryAttempts: 1
                     ),
                     fetch: { _ in
                         let n = await counter.incrementAndGet()
@@ -42,7 +42,7 @@ final class SwiftUIIntegrationiOSTests: XCTestCase {
             }
 
             var body: some View {
-                Text(user.state.data?.name ?? "Loading")
+                Text(user.data?.name ?? "Loading")
             }
         }
 
@@ -61,14 +61,14 @@ final class SwiftUIIntegrationiOSTests: XCTestCase {
         }
 
         try await eventually(timeout: 3.0) {
-            let cached = try? await cache.get(key: "user:123", as: TestUser.self)
+            let cached = try? await cache.get(storageKey: TestUserQuery(userId: 123).storageKey, as: TestUser.self)
             return cached?.data.name == "Fetch 1"
         }
 
         NotificationCenter.default.post(name: UIApplication.didBecomeActiveNotification, object: nil)
 
         try await eventually(timeout: 3.0) {
-            let cached = try? await cache.get(key: "user:123", as: TestUser.self)
+            let cached = try? await cache.get(storageKey: TestUserQuery(userId: 123).storageKey, as: TestUser.self)
             return cached?.data.name == "Fetch 2"
         }
     }
@@ -92,7 +92,7 @@ final class SwiftUIIntegrationiOSTests: XCTestCase {
                 cacheTime: .hours(1),
                 refetchOnFocus: false,
                 refetchOnReconnect: true,
-                retryCount: 1
+                retryAttempts: 1
             ),
             fetcher: {
                 let n = await counter.incrementAndGet()
@@ -102,7 +102,7 @@ final class SwiftUIIntegrationiOSTests: XCTestCase {
         observer.startObserving()
 
         try await eventually(timeout: 3.0) {
-            let cached = try? await cache.get(key: key.cacheKey, as: TestUser.self)
+            let cached = try? await cache.get(storageKey: key.storageKey, as: TestUser.self)
             return cached?.data.name == "Fetch 1"
         }
 
@@ -110,7 +110,7 @@ final class SwiftUIIntegrationiOSTests: XCTestCase {
         await connectivity.setStatusForTesting(.satisfied)
 
         try await eventually(timeout: 3.0) {
-            let cached = try? await cache.get(key: key.cacheKey, as: TestUser.self)
+            let cached = try? await cache.get(storageKey: key.storageKey, as: TestUser.self)
             return cached?.data.name == "Fetch 2"
         }
     }

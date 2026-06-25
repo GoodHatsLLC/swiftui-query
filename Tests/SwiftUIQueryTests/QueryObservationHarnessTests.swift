@@ -48,10 +48,10 @@ final class QueryObservationHarnessTests: XCTestCase {
 
 @MainActor
 private final class QueryHarness {
-    @Query
-    private var internalUser: QueryObserver<TestUserQuery>
+    @Query<TestUserQuery>
+    private var internalUser: QueryState<TestUser>
 
-    var user: QueryObserver<TestUserQuery> { internalUser }
+    var user: QueryState<TestUser> { internalUser }
 
     init(
         client: QueryClient,
@@ -70,7 +70,8 @@ private final class QueryHarness {
     }
 
     func observeDataChange(_ onChange: @Sendable @escaping () -> Void) {
-        internalUser.track({ internalUser.state.data }, onChange: onChange)
+        let observer = _internalUser.observerForTesting
+        observer.track({ observer.state.data }, onChange: onChange)
     }
 }
 

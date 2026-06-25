@@ -7,7 +7,7 @@ import XCTest
 final class CorruptedCacheRecoveryTests: XCTestCase {
     func testCorruptedCachedPayloadTriggersRefetchAndRecovers() async throws {
         let dbPool = try createDatabasePool(configuration: .inMemory)
-        let cache = QueryCache(dbPool: dbPool)
+        let cache = QueryCache(storage: GRDBCacheStorage(pool: dbPool))
 
         let lifecycle = AppLifecycleMonitor(observeSystemNotifications: false)
         let connectivity = ConnectivityMonitor(startMonitoring: false, initialStatus: .satisfied)
@@ -23,11 +23,11 @@ final class CorruptedCacheRecoveryTests: XCTestCase {
 
         try await dbPool.write { db in
             var record = QueryCacheEntry(
-                cacheKey: key.cacheKey,
+                cacheKey: key.storageKey,
                 queryHash: corrupted.sha256Hash,
                 responseData: corrupted,
                 responseType: String(describing: TestUser.self),
-                tags: key.tags.jsonEncoded,
+                tags: key.cacheTags.jsonEncoded,
                 createdAt: now,
                 updatedAt: now,
                 staleAt: now.addingTimeInterval(60),
@@ -40,7 +40,7 @@ final class CorruptedCacheRecoveryTests: XCTestCase {
         let fetchCalls = Counter()
         let observer = client.query(
             key,
-            options: .init(staleTime: .hours(1), cacheTime: .hours(1), retryCount: 1),
+            options: .init(staleTime: .hours(1), cacheTime: .hours(1), retryAttempts: 1),
             fetcher: {
                 let n = await fetchCalls.incrementAndGet()
                 return TestUser(id: 321, name: "Fetched \(n)")
@@ -52,7 +52,7 @@ final class CorruptedCacheRecoveryTests: XCTestCase {
             observer.state.data?.name == "Fetched 1"
         }
 
-        let cached = try await cache.get(key: key.cacheKey, as: TestUser.self)
+        let cached = try await cache.get(storageKey: key.storageKey, as: TestUser.self)
         XCTAssertEqual(cached?.data.name, "Fetched 1")
 
         let calls = await fetchCalls.value()

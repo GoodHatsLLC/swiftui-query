@@ -33,7 +33,24 @@ public struct Query<K: QueryKey> {
         self.fetcher = fetcher
     }
 
-    public var wrappedValue: QueryObserver<K> {
+    public var wrappedValue: QueryState<K.Response> {
+        mutating get {
+            if let observer { return observer.state }
+
+            let created = client.query(key, options: options, fetcher: fetcher)
+            created.startObserving()
+            observer = created
+            return created.state
+        }
+    }
+
+    public var projectedValue: QueryActions<K> {
+        mutating get {
+            QueryActions(observer: observer ?? wrappedValue, client: client, key: key)
+        }
+    }
+
+    var observerForTesting: QueryObserver<K> {
         mutating get {
             if let observer { return observer }
 
@@ -41,12 +58,6 @@ public struct Query<K: QueryKey> {
             created.startObserving()
             observer = created
             return created
-        }
-    }
-
-    public var projectedValue: QueryActions<K> {
-        mutating get {
-            QueryActions(observer: observer ?? wrappedValue, client: client, key: key)
         }
     }
 

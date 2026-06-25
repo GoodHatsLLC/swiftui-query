@@ -33,7 +33,7 @@ import SwiftUI
 public struct Query<K: QueryKey>: @preconcurrency DynamicProperty, Sendable {
     @Environment(\.queryClient) private var client
     @State private var observer: Synchronized<QueryObserver<K>?> = .init(nil)
-    @State private var observerCacheKey: Synchronized<String?> = .init(nil)
+    @State private var observerKey: Synchronized<K?> = .init(nil)
     @State private var observerClientIdentity: Synchronized<Int?> = .init(nil)
     @State private var observerOptions: Synchronized<QueryOptions?> = .init(nil)
     @State private var environmentSnapshot: Synchronized<Transferring<EnvironmentValues>?> = .init(nil)
@@ -64,13 +64,13 @@ public struct Query<K: QueryKey>: @preconcurrency DynamicProperty, Sendable {
         self.fetcher = fetch
     }
     
-    public var wrappedValue: QueryObserver<K> {
-        ensureObserver()
+    public var wrappedValue: QueryState<K.Response> {
+        ensureObserver().state
     }
 
     @MainActor
     public var projectedValue: QueryActions<K> {
-        QueryActions(observer: observer.withLock{$0}, client: client, key: key)
+        QueryActions(observer: ensureObserver(), client: client, key: key)
     }
     
     public func update() {
@@ -85,12 +85,12 @@ public struct Query<K: QueryKey>: @preconcurrency DynamicProperty, Sendable {
         // Recreate the observer when the key, the client, or the options change.
         // (The fetcher closure can't be compared for identity, so a fetcher-only
         // change with an unchanged key/options/client is not detected — #13.)
-        if observerCacheKey.withLock({ $0 }) != key.cacheKey ||
+        if observerKey.withLock({ $0 }) != key ||
             observerClientIdentity.withLock({ $0 }) != currentClientIdentity ||
             observerOptions.withLock({ $0 }) != options {
             observer.withLock({ $0 })?.stopObserving()
             observer.withLock { $0 = nil }
-            observerCacheKey.withLock { $0 = key.cacheKey }
+            observerKey.withLock { $0 = key }
             observerClientIdentity.withLock { $0 = currentClientIdentity }
             observerOptions.withLock { $0 = options }
         }
@@ -110,7 +110,7 @@ public struct Query<K: QueryKey>: @preconcurrency DynamicProperty, Sendable {
             }
         )
         self.observer.withLock { $0 = newObserver }
-        self.observerCacheKey.withLock { $0 = key.cacheKey }
+        self.observerKey.withLock { $0 = key }
         self.observerClientIdentity.withLock { $0 = currentClientIdentity }
         self.observerOptions.withLock { $0 = options }
         newObserver.startObserving()

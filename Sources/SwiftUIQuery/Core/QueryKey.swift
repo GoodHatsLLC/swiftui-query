@@ -9,44 +9,37 @@ import Foundation
 ///     typealias Response = User
 ///     let userId: Int
 ///
-///     var cacheKey: String { "user:\(userId)" }
-///     var tags: Set<QueryTag> { [.users, .user(userId)] }
+///     var identity: QueryIdentity { QueryIdentity("users", userId) }
+///     var invalidationTags: Set<QueryTag> { [QueryTag("users")] }
 /// }
 /// ```
 public protocol QueryKey: Hashable, Sendable {
     /// The type of data this query returns
     associatedtype Response: Codable & Sendable
-    
-    /// Unique cache identifier for this specific query instance.
-    /// Should be deterministic and unique across all query instances.
-    var cacheKey: String { get }
-    
-    /// Tags for hierarchical invalidation.
-    /// Include all relevant tags that should trigger cache invalidation.
-    var tags: Set<QueryTag> { get }
+
+    /// Exact identity for this query instance.
+    ///
+    /// The library derives its storage key from this structured identity. Callers
+    /// should model the resource being fetched, not hand-build storage strings.
+    var identity: QueryIdentity { get }
+
+    /// Additional tags that should invalidate this query.
+    ///
+    /// The query's exact identity tag is always included automatically.
+    var invalidationTags: Set<QueryTag> { get }
 }
 
-// MARK: - Type-Erased Query Key
+extension QueryKey {
+    public var invalidationTags: Set<QueryTag> { [] }
+}
 
-/// Type-erased wrapper for QueryKey to store in collections
-public struct AnyQueryKey: Hashable, Sendable {
-    public let cacheKey: String
-    public let tags: Set<QueryTag>
-    private let hashValue_: Int
-    
-    public init<K: QueryKey>(_ key: K) {
-        self.cacheKey = key.cacheKey
-        self.tags = key.tags
-        self.hashValue_ = key.hashValue
-    }
-    
-    public func hash(into hasher: inout Hasher) {
-        hasher.combine(cacheKey)
-        hasher.combine(hashValue_)
-    }
-    
-    public static func == (lhs: AnyQueryKey, rhs: AnyQueryKey) -> Bool {
-        lhs.cacheKey == rhs.cacheKey && lhs.hashValue_ == rhs.hashValue_
+extension QueryKey {
+    var storageKey: String { identity.storageKey }
+
+    var cacheTags: Set<QueryTag> {
+        var tags = invalidationTags
+        tags.insert(identity.tag)
+        return tags
     }
 }
 
@@ -66,8 +59,8 @@ public struct QueryOptions: Sendable, Equatable {
     /// Whether to refetch when network reconnects
     public var refetchOnReconnect: Bool
     
-    /// Number of retry attempts on failure
-    public var retryCount: Int
+    /// Number of retry attempts after the first failure
+    public var retryAttempts: Int
     
     /// Delay between retries
     public var retryDelay: Duration
@@ -77,14 +70,14 @@ public struct QueryOptions: Sendable, Equatable {
         cacheTime: Duration = .days(7),
         refetchOnFocus: Bool = false,
         refetchOnReconnect: Bool = true,
-        retryCount: Int = 3,
+        retryAttempts: Int = 3,
         retryDelay: Duration = .seconds(1)
     ) {
         self.staleTime = staleTime
         self.cacheTime = cacheTime
         self.refetchOnFocus = refetchOnFocus
         self.refetchOnReconnect = refetchOnReconnect
-        self.retryCount = retryCount
+        self.retryAttempts = retryAttempts
         self.retryDelay = retryDelay
     }
     

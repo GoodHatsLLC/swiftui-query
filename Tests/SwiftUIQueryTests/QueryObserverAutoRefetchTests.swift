@@ -22,7 +22,7 @@ final class QueryObserverAutoRefetchTests: XCTestCase {
                 cacheTime: .hours(1),
                 refetchOnFocus: true,
                 refetchOnReconnect: false,
-                retryCount: 1
+                retryAttempts: 1
             ),
             fetcher: {
                 let n = await counter.incrementAndGet()
@@ -32,14 +32,14 @@ final class QueryObserverAutoRefetchTests: XCTestCase {
         observer.startObserving()
 
         try await eventually(timeout: 2.0) {
-            let cached = try? await cache.get(key: key.cacheKey, as: TestUser.self)
+            let cached = try? await cache.get(storageKey: key.storageKey, as: TestUser.self)
             return cached?.data.name == "Fetch 1"
         }
 
         await lifecycle.emitForTesting(.didBecomeActive)
 
         try await eventually(timeout: 2.0) {
-            let cached = try? await cache.get(key: key.cacheKey, as: TestUser.self)
+            let cached = try? await cache.get(storageKey: key.storageKey, as: TestUser.self)
             return cached?.data.name == "Fetch 2"
         }
     }
@@ -63,7 +63,7 @@ final class QueryObserverAutoRefetchTests: XCTestCase {
                 cacheTime: .hours(1),
                 refetchOnFocus: true,
                 refetchOnReconnect: false,
-                retryCount: 1
+                retryAttempts: 1
             ),
             fetcher: {
                 let n = await counter.incrementAndGet()
@@ -73,7 +73,7 @@ final class QueryObserverAutoRefetchTests: XCTestCase {
         observer.startObserving()
 
         try await eventually(timeout: 2.0) {
-            let cached = try? await cache.get(key: key.cacheKey, as: TestUser.self)
+            let cached = try? await cache.get(storageKey: key.storageKey, as: TestUser.self)
             return cached?.data.name == "Fetch 1"
         }
 
@@ -81,7 +81,7 @@ final class QueryObserverAutoRefetchTests: XCTestCase {
         await lifecycle.emitForTesting(.didBecomeActive)
         try? await Task.sleep(for: .milliseconds(200))
 
-        let cached = try await cache.get(key: key.cacheKey, as: TestUser.self)
+        let cached = try await cache.get(storageKey: key.storageKey, as: TestUser.self)
         XCTAssertEqual(cached?.data.name, "Fetch 1")
         let count = await counter.value()
         XCTAssertEqual(count, 1)
@@ -106,7 +106,7 @@ final class QueryObserverAutoRefetchTests: XCTestCase {
                 cacheTime: .hours(1),
                 refetchOnFocus: false,
                 refetchOnReconnect: true,
-                retryCount: 1
+                retryAttempts: 1
             ),
             fetcher: {
                 let n = await counter.incrementAndGet()
@@ -116,7 +116,7 @@ final class QueryObserverAutoRefetchTests: XCTestCase {
         observer.startObserving()
 
         try await eventually(timeout: 2.0) {
-            let cached = try? await cache.get(key: key.cacheKey, as: TestUser.self)
+            let cached = try? await cache.get(storageKey: key.storageKey, as: TestUser.self)
             return cached?.data.name == "Fetch 1"
         }
 
@@ -124,7 +124,7 @@ final class QueryObserverAutoRefetchTests: XCTestCase {
         await connectivity.setStatusForTesting(.satisfied)
 
         try await eventually(timeout: 2.0) {
-            let cached = try? await cache.get(key: key.cacheKey, as: TestUser.self)
+            let cached = try? await cache.get(storageKey: key.storageKey, as: TestUser.self)
             return cached?.data.name == "Fetch 2"
         }
     }
@@ -148,7 +148,7 @@ final class QueryObserverAutoRefetchTests: XCTestCase {
                 cacheTime: .hours(1),
                 refetchOnFocus: false,
                 refetchOnReconnect: true,
-                retryCount: 1
+                retryAttempts: 1
             ),
             fetcher: {
                 let n = await counter.incrementAndGet()
@@ -158,7 +158,7 @@ final class QueryObserverAutoRefetchTests: XCTestCase {
         observer.startObserving()
 
         try await eventually(timeout: 2.0) {
-            let cached = try? await cache.get(key: key.cacheKey, as: TestUser.self)
+            let cached = try? await cache.get(storageKey: key.storageKey, as: TestUser.self)
             return cached?.data.name == "Fetch 1"
         }
 
@@ -186,7 +186,7 @@ final class QueryObserverAutoRefetchTests: XCTestCase {
                 cacheTime: .hours(1),
                 refetchOnFocus: false,
                 refetchOnReconnect: true,
-                retryCount: 1
+                retryAttempts: 1
             ),
             fetcher: {
                 let n = await counter.incrementAndGet()
@@ -196,7 +196,7 @@ final class QueryObserverAutoRefetchTests: XCTestCase {
         observer.startObserving()
 
         try await eventually(timeout: 2.0) {
-            let cached = try? await cache.get(key: key.cacheKey, as: TestUser.self)
+            let cached = try? await cache.get(storageKey: key.storageKey, as: TestUser.self)
             return cached?.data.name == "Fetch 1"
         }
 
@@ -205,7 +205,7 @@ final class QueryObserverAutoRefetchTests: XCTestCase {
         await connectivity.setStatusForTesting(.satisfied)
         try? await Task.sleep(for: .milliseconds(250))
 
-        let cached = try await cache.get(key: key.cacheKey, as: TestUser.self)
+        let cached = try await cache.get(storageKey: key.storageKey, as: TestUser.self)
         XCTAssertEqual(cached?.data.name, "Fetch 1")
         let count = await counter.value()
         XCTAssertEqual(count, 1)

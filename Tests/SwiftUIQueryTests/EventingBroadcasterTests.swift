@@ -15,11 +15,11 @@ final class EventingBroadcasterTests: XCTestCase {
         let past = Date(timeIntervalSince1970: 1_000)
         try await storage.upsert(
             CacheRecord(
-                cacheKey: "user:1",
+                storageKey: "user:1",
                 queryHash: "h",
                 responseData: Data("{}".utf8),
                 responseType: "TestUser",
-                tagSegments: [["users"]],
+                tags: [QueryTag("users")],
                 createdAt: past,
                 updatedAt: past,
                 staleAt: past,
@@ -86,7 +86,7 @@ final class EventingBroadcasterTests: XCTestCase {
         try await Task.sleep(for: .milliseconds(250))
         let afterInitial = count.withLock { $0 }
 
-        try await cache.invalidate(key: TestUserQuery(userId: 1).cacheKey)
+        try await cache.invalidate(storageKey: TestUserQuery(userId: 1).storageKey)
         try await Task.sleep(for: .milliseconds(350))
         observer.stopObserving()
 

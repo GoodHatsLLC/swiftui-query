@@ -20,7 +20,7 @@ public enum MutationStatus: String, Sendable, Equatable {
 /// - Can invalidate related queries after completion
 ///
 /// ```swift
-/// @State private var createPost = MutationState<CreatePostInput, Post>(
+/// @State private var createPost = MutationState<CreatePostInput, Post, Void>(
 ///     mutationFn: api.createPost,
 ///     invalidateTags: [.posts]
 /// )
@@ -36,7 +36,7 @@ public enum MutationStatus: String, Sendable, Equatable {
 @Observable
 #endif
 @MainActor
-public final class MutationState<Input: Sendable, Output: Sendable> {
+public final class MutationState<Input: Sendable, Output: Sendable, Context: Sendable> {
     // MARK: - Core State
     
     /// The last successful mutation result
@@ -69,9 +69,9 @@ public final class MutationState<Input: Sendable, Output: Sendable> {
 
     private let mutationFn: @MainActor (Input) async throws -> Output
     private let invalidateTags: [QueryTag]
-    private let onMutate: (@MainActor (Input) async -> Any?)?
+    private let onMutate: (@MainActor (Input) async -> Context)?
     private let onSuccess: (@MainActor (Output, Input) async -> Void)?
-    private let onError: (@MainActor (Error, Input, Any?) async -> Void)?
+    private let onError: (@MainActor (Error, Input, Context?) async -> Void)?
     private let onSettled: (@MainActor (Output?, Error?, Input) async -> Void)?
 
     /// Optional name for this mutation (used in cycle detection diagnostics)
@@ -89,9 +89,9 @@ public final class MutationState<Input: Sendable, Output: Sendable> {
         name: String? = nil,
         mutationFn: @escaping @MainActor (Input) async throws -> Output,
         invalidateTags: [QueryTag] = [],
-        onMutate: (@MainActor (Input) async -> Any?)? = nil,
+        onMutate: (@MainActor (Input) async -> Context)? = nil,
         onSuccess: (@MainActor (Output, Input) async -> Void)? = nil,
-        onError: (@MainActor (Error, Input, Any?) async -> Void)? = nil,
+        onError: (@MainActor (Error, Input, Context?) async -> Void)? = nil,
         onSettled: (@MainActor (Output?, Error?, Input) async -> Void)? = nil,
         client: QueryClient? = nil
     ) {
@@ -150,7 +150,7 @@ public final class MutationState<Input: Sendable, Output: Sendable> {
             let source = name ?? "MutationState<\(Input.self), \(Output.self)>"
             if let resolvedClient {
                 for tag in invalidateTags {
-                    await resolvedClient.invalidate(tag: tag, source: source)
+                    try await resolvedClient.invalidate(tag: tag, source: source)
                 }
             }
 
@@ -193,6 +193,7 @@ public final class MutationState<Input: Sendable, Output: Sendable> {
 
 public enum MutationStateError: Error, Sendable {
     case missingQueryClient
+    case missingEnvironment
 }
 
 // MARK: - Convenience Initializers
@@ -207,13 +208,13 @@ extension MutationState where Input == Void {
 // MARK: - Mutation Builder
 
 /// Builder for creating mutations with configuration
-public struct MutationBuilder<Input: Sendable, Output: Sendable> {
+public struct MutationBuilder<Input: Sendable, Output: Sendable, Context: Sendable> {
     private var name: String?
     private var mutationFn: (@MainActor (Input) async throws -> Output)?
     private var invalidateTags: [QueryTag] = []
-    private var onMutate: (@MainActor (Input) async -> Any?)?
+    private var onMutate: (@MainActor (Input) async -> Context)?
     private var onSuccess: (@MainActor (Output, Input) async -> Void)?
-    private var onError: (@MainActor (Error, Input, Any?) async -> Void)?
+    private var onError: (@MainActor (Error, Input, Context?) async -> Void)?
     private var onSettled: (@MainActor (Output?, Error?, Input) async -> Void)?
     private var client: QueryClient?
 
@@ -237,7 +238,7 @@ public struct MutationBuilder<Input: Sendable, Output: Sendable> {
         return copy
     }
     
-    public func onMutate(_ handler: @escaping @MainActor (Input) async -> Any?) -> Self {
+    public func onMutate(_ handler: @escaping @MainActor (Input) async -> Context) -> Self {
         var copy = self
         copy.onMutate = handler
         return copy
@@ -249,7 +250,7 @@ public struct MutationBuilder<Input: Sendable, Output: Sendable> {
         return copy
     }
     
-    public func onError(_ handler: @escaping @MainActor (Error, Input, Any?) async -> Void) -> Self {
+    public func onError(_ handler: @escaping @MainActor (Error, Input, Context?) async -> Void) -> Self {
         var copy = self
         copy.onError = handler
         return copy
@@ -268,7 +269,7 @@ public struct MutationBuilder<Input: Sendable, Output: Sendable> {
     }
     
     @MainActor
-    public func build() -> MutationState<Input, Output> {
+    public func build() -> MutationState<Input, Output, Context> {
         guard let mutationFn else {
             fatalError("MutationBuilder requires a mutationFn")
         }

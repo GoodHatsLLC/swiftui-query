@@ -6,8 +6,8 @@ import SwiftUIQuery
 struct UsersQuery: QueryKey {
     typealias Response = [User]
 
-    var cacheKey: String { "users:all" }
-    var tags: Set<QueryTag> { [.users] }
+    var identity: QueryIdentity { QueryIdentity("users", "all") }
+    var invalidationTags: Set<QueryTag> { [.users] }
 }
 
 /// Fetches a single user by ID
@@ -15,8 +15,8 @@ struct UserQuery: QueryKey {
     typealias Response = User
     let userId: Int
 
-    var cacheKey: String { "user:\(userId)" }
-    var tags: Set<QueryTag> { [.users, .user(userId)] }
+    var identity: QueryIdentity { QueryIdentity("users", userId) }
+    var invalidationTags: Set<QueryTag> { [.users] }
 }
 
 // MARK: - Post Queries
@@ -25,8 +25,8 @@ struct UserQuery: QueryKey {
 struct PostsQuery: QueryKey {
     typealias Response = [Post]
 
-    var cacheKey: String { "posts:all" }
-    var tags: Set<QueryTag> { [.posts] }
+    var identity: QueryIdentity { QueryIdentity("posts", "all") }
+    var invalidationTags: Set<QueryTag> { [.posts] }
 }
 
 /// Fetches a single post by ID
@@ -34,8 +34,8 @@ struct PostQuery: QueryKey {
     typealias Response = Post
     let postId: Int
 
-    var cacheKey: String { "post:\(postId)" }
-    var tags: Set<QueryTag> { [.posts, .post(postId)] }
+    var identity: QueryIdentity { QueryIdentity("posts", postId) }
+    var invalidationTags: Set<QueryTag> { [.posts] }
 }
 
 /// Fetches posts by a specific user
@@ -43,8 +43,8 @@ struct UserPostsQuery: QueryKey {
     typealias Response = [Post]
     let userId: Int
 
-    var cacheKey: String { "user:\(userId):posts" }
-    var tags: Set<QueryTag> { [.posts] }
+    var identity: QueryIdentity { QueryIdentity("users", userId, "posts") }
+    var invalidationTags: Set<QueryTag> { [.posts] }
 }
 
 // MARK: - Comment Queries
@@ -54,6 +54,6 @@ struct PostCommentsQuery: QueryKey {
     typealias Response = [Comment]
     let postId: Int
 
-    var cacheKey: String { "post:\(postId):comments" }
-    var tags: Set<QueryTag> { [.comments, .postComments(postId)] }
+    var identity: QueryIdentity { QueryIdentity("posts", postId, "comments") }
+    var invalidationTags: Set<QueryTag> { [.comments] }
 }

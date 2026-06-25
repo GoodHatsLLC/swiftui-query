@@ -20,29 +20,31 @@ actor InMemoryCacheStorage: CacheStorage {
 
     // MARK: - Reads
 
-    public func read(key: String, now: Date) async throws -> CacheRecord? {
-        guard let record = store[key] else { return nil }
+    public func read(storageKey: String, now: Date) async throws -> CacheRecord? {
+        guard let record = store[storageKey] else { return nil }
         return record.isExpired(at: now) ? nil : record
     }
 
-    public func readIgnoringExpiry(key: String) async throws -> CacheRecord? {
-        store[key]
+    public func readIgnoringExpiry(storageKey: String) async throws -> CacheRecord? {
+        store[storageKey]
     }
 
-    public func exists(key: String, now: Date) async throws -> Bool {
-        guard let record = store[key] else { return false }
+    public func exists(storageKey: String, now: Date) async throws -> Bool {
+        guard let record = store[storageKey] else { return false }
         return !record.isExpired(at: now)
     }
 
     // MARK: - Writes
 
     public func upsert(_ record: CacheRecord) async throws {
-        var record = record
-        if let existing = store[record.cacheKey] {
+        let recordToStore: CacheRecord
+        if let existing = store[record.storageKey] {
             // Preserve the original creation time on overwrite (matches GRDB).
-            record.createdAt = existing.createdAt
+            recordToStore = record.withCreatedAt(existing.createdAt)
+        } else {
+            recordToStore = record
         }
-        store[record.cacheKey] = record
+        store[record.storageKey] = recordToStore
         enforceCapacity()
     }
 
@@ -50,23 +52,20 @@ actor InMemoryCacheStorage: CacheStorage {
     public func invalidate(tag: QueryTag, now: Date) async throws -> [String] {
         var matched: [String] = []
         for (key, record) in store
-        where TagMatching.matches(tag: tag, tagSegments: record.tagSegments) {
-            var updated = record
-            updated.isInvalidated = true
-            store[key] = updated
+        where record.tags.containsMatch(for: tag) {
+            store[key] = record.invalidated()
             matched.append(key)   // include expired entries (fix #7)
         }
         return matched
     }
 
-    public func markStale(key: String) async throws {
-        guard var record = store[key] else { return }
-        record.isInvalidated = true
-        store[key] = record
+    public func markStale(storageKey: String) async throws {
+        guard let record = store[storageKey] else { return }
+        store[storageKey] = record.invalidated()
     }
 
-    public func remove(key: String) async throws {
-        store.removeValue(forKey: key)
+    public func remove(storageKey: String) async throws {
+        store.removeValue(forKey: storageKey)
     }
 
     public func clear() async throws {

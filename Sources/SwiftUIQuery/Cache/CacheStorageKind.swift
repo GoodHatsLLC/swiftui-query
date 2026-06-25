@@ -7,11 +7,11 @@ import Foundation
 ///
 /// ```swift
 /// import SwiftUIQuery
-/// QueryClient(storage: .inMemory)                 // process-lifetime dictionary
-/// QueryClient(storage: .codable(directory: url))  // one JSON file per key
+/// try QueryClient(storage: .inMemory)                 // process-lifetime dictionary
+/// try QueryClient(storage: .codable(directory: url))  // one JSON file per key
 ///
 /// import SwiftUIQueryGRDB
-/// QueryClient(storage: .grdb(.persistent))        // SQLite via GRDB
+/// try QueryClient(storage: .grdb(.persistent))        // SQLite via GRDB
 /// ```
 ///
 /// `.custom` is the extension point: any ``CacheStorage`` can be supplied via a

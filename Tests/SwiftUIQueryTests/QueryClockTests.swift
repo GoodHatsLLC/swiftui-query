@@ -9,18 +9,18 @@ final class QueryClockTests: XCTestCase {
 
         let key = "user:clock:stale"
         try await cache.set(
-            key: key,
+            storageKey: key,
             data: TestUser(id: 1, name: "Cached"),
             tags: [QueryTag("users")],
             staleTime: .seconds(10),
             cacheTime: .hours(1)
         )
 
-        let fresh = try await cache.get(key: key, as: TestUser.self)
+        let fresh = try await cache.get(storageKey: key, as: TestUser.self)
         XCTAssertEqual(fresh?.isStale, false)
 
         now.withLock { $0 = $0.addingTimeInterval(11) }
-        let stale = try await cache.get(key: key, as: TestUser.self)
+        let stale = try await cache.get(storageKey: key, as: TestUser.self)
         XCTAssertEqual(stale?.isStale, true)
     }
 
@@ -31,20 +31,20 @@ final class QueryClockTests: XCTestCase {
 
         let key = "user:clock:expires"
         try await cache.set(
-            key: key,
+            storageKey: key,
             data: TestUser(id: 2, name: "Cached"),
             tags: [QueryTag("users")],
             staleTime: .hours(1),
             cacheTime: .seconds(10)
         )
 
-        let existsBefore = try await cache.exists(key: key)
+        let existsBefore = try await cache.exists(storageKey: key)
         XCTAssertEqual(existsBefore, true)
 
         now.withLock { $0 = $0.addingTimeInterval(11) }
-        let expired = try await cache.get(key: key, as: TestUser.self)
+        let expired = try await cache.get(storageKey: key, as: TestUser.self)
         XCTAssertNil(expired)
-        let existsAfter = try await cache.exists(key: key)
+        let existsAfter = try await cache.exists(storageKey: key)
         XCTAssertEqual(existsAfter, false)
     }
 }

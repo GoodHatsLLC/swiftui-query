@@ -24,7 +24,7 @@ final class QueryObserverForceRefetchTests: XCTestCase {
                 return TestUser(id: 1, name: "fresh")
             },
             cache: cache,
-            options: QueryOptions(staleTime: .seconds(60), retryCount: 1)
+            options: QueryOptions(staleTime: .seconds(60), retryAttempts: 1)
         )
 
         observer.startObserving()
@@ -55,13 +55,13 @@ final class QueryObserverForceRefetchTests: XCTestCase {
                 return TestUser(id: 1, name: "v")
             },
             cache: cache,
-            options: QueryOptions(staleTime: .seconds(60), retryCount: 1)
+            options: QueryOptions(staleTime: .seconds(60), retryAttempts: 1)
         )
 
         // Two forced refetches issued together must collapse onto one fetch.
-        async let a = observer.refetch()
-        async let b = observer.refetch()
-        _ = await (a, b)
+        async let a = try observer.refetch()
+        async let b = try observer.refetch()
+        _ = try await (a, b)
 
         XCTAssertEqual(calls.withLock { $0 }, 1, "concurrent manual refetches must share one request")
     }

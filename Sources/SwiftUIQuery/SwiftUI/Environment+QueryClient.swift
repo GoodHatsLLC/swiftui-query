@@ -5,7 +5,7 @@ import SwiftUI
 
 @MainActor
 private struct QueryClientKey: @preconcurrency EnvironmentKey {
-    static let defaultValue: QueryClient = QueryClient()
+    static let defaultValue: QueryClient = .shared
 }
 
 extension EnvironmentValues {
@@ -30,26 +30,14 @@ extension View {
 /// A view that provides a QueryClient to its content
 @MainActor
 public struct QueryClientProvider<Content: View>: View {
-    private let client: QueryClient
+    @State private var client: QueryClient
     private let content: Content
-
-    public init(
-        storage: CacheStorageKind = .inMemory,
-        defaultOptions: QueryOptions = .default,
-        @ViewBuilder content: () -> Content
-    ) {
-        self.client = QueryClient(
-            storage: storage,
-            defaultOptions: defaultOptions
-        )
-        self.content = content()
-    }
 
     public init(
         client: QueryClient,
         @ViewBuilder content: () -> Content
     ) {
-        self.client = client
+        self._client = State(initialValue: client)
         self.content = content()
     }
 

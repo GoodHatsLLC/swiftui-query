@@ -1,5 +1,36 @@
 import Foundation
 
+/// Exact identity for one cacheable query instance.
+///
+/// `QueryIdentity` is intentionally structured. SwiftUIQuery derives its private
+/// storage key from the segment array, so callers do not need to maintain a
+/// separate string key alongside invalidation tags.
+public struct QueryIdentity: Hashable, Sendable, Codable, CustomStringConvertible {
+    public let segments: [String]
+
+    public init(_ segments: any CustomStringConvertible...) {
+        self.init(segments: segments.map { String(describing: $0) })
+    }
+
+    public init(segments: [String]) {
+        self.segments = segments
+    }
+
+    public var tag: QueryTag {
+        QueryTag(segments: segments)
+    }
+
+    public var description: String {
+        segments.joined(separator: ".")
+    }
+
+    var storageKey: String {
+        let data = (try? JSONEncoder().encode(segments)) ?? Data(description.utf8)
+        let encoded = String(data: data, encoding: .utf8) ?? description
+        return "identity:\(encoded)"
+    }
+}
+
 /// Hierarchical tags enabling cascade invalidation.
 ///
 /// Tags use a segment-based structure where invalidating a parent tag
@@ -18,8 +49,8 @@ import Foundation
 public struct QueryTag: Hashable, Sendable, Codable, ExpressibleByStringLiteral, CustomStringConvertible {
     public let segments: [String]
     
-    public init(_ segments: String...) {
-        self.segments = segments
+    public init(_ segments: any CustomStringConvertible...) {
+        self.segments = segments.map { String(describing: $0) }
     }
     
     public init(segments: [String]) {

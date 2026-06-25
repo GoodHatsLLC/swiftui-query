@@ -14,8 +14,8 @@ final class SwiftUIIntegrationTests: XCTestCase {
         let counter = FetchCounter()
 
         struct TestView: View {
-            @Query
-            private var user: QueryObserver<TestUserQuery>
+            @Query<TestUserQuery>
+            private var user: QueryState<TestUser>
 
             init(counter: FetchCounter) {
                 _user = Query(
@@ -30,7 +30,7 @@ final class SwiftUIIntegrationTests: XCTestCase {
             }
 
             var body: some View {
-                Text(user.state.data?.name ?? "Loading")
+                Text(user.data?.name ?? "Loading")
             }
         }
 
@@ -40,14 +40,14 @@ final class SwiftUIIntegrationTests: XCTestCase {
             }
         )
         let window = NSWindow(contentViewController: hosting)
-        window.makeKeyAndOrderFront(nil)
+        window.makeKeyAndOrderFront(nil as Any?)
         _ = hosting.view
         hosting.view.layoutSubtreeIfNeeded()
         window.displayIfNeeded()
         defer { window.close() }
 
         try await eventually(timeout: 2.0) {
-            let cached = try? await cache.get(key: "user:1", as: TestUser.self)
+            let cached = try? await cache.get(storageKey: TestUserQuery(userId: 1).storageKey, as: TestUser.self)
             return cached?.data.name == "User 1"
         }
     }
@@ -63,8 +63,8 @@ final class SwiftUIIntegrationTests: XCTestCase {
         }
 
         struct QueryView: View {
-            @Query
-            private var user: QueryObserver<TestUserQuery>
+            @Query<TestUserQuery>
+            private var user: QueryState<TestUser>
 
             init(userId: Int, counter: FetchCounter) {
                 _user = Query(
@@ -79,7 +79,7 @@ final class SwiftUIIntegrationTests: XCTestCase {
             }
 
             var body: some View {
-                Text(user.state.data?.name ?? "Loading")
+                Text(user.data?.name ?? "Loading")
             }
         }
 
@@ -100,7 +100,7 @@ final class SwiftUIIntegrationTests: XCTestCase {
             }
         )
         let window = NSWindow(contentViewController: hosting)
-        window.makeKeyAndOrderFront(nil)
+        window.makeKeyAndOrderFront(nil as Any?)
         _ = hosting.view
         hosting.view.layoutSubtreeIfNeeded()
         window.displayIfNeeded()
@@ -113,7 +113,7 @@ final class SwiftUIIntegrationTests: XCTestCase {
         model.userId = 2
 
         try await eventually(timeout: 3.0) {
-            let cached2 = try? await cache.get(key: "user:2", as: TestUser.self)
+            let cached2 = try? await cache.get(storageKey: TestUserQuery(userId: 2).storageKey, as: TestUser.self)
             return cached2?.data.name == "User 2"
         }
     }
@@ -130,8 +130,8 @@ final class SwiftUIIntegrationTests: XCTestCase {
         }
 
         struct QueryView: View {
-            @Query
-            private var user: QueryObserver<TestUserQuery>
+            @Query<TestUserQuery>
+            private var user: QueryState<TestUser>
 
             init(staleSeconds: Int, counter: FetchCounter) {
                 _user = Query(
@@ -146,7 +146,7 @@ final class SwiftUIIntegrationTests: XCTestCase {
             }
 
             var body: some View {
-                Text(user.state.data?.name ?? "Loading")
+                Text(user.data?.name ?? "Loading")
             }
         }
 
@@ -165,7 +165,7 @@ final class SwiftUIIntegrationTests: XCTestCase {
             }
         )
         let window = NSWindow(contentViewController: hosting)
-        window.makeKeyAndOrderFront(nil)
+        window.makeKeyAndOrderFront(nil as Any?)
         _ = hosting.view
         hosting.view.layoutSubtreeIfNeeded()
         window.displayIfNeeded()
@@ -195,8 +195,8 @@ final class SwiftUIIntegrationTests: XCTestCase {
         struct TestView: View {
             @ObservedObject var sink: Sink
 
-            @Query
-            private var user: QueryObserver<TestUserQuery>
+            @Query<TestUserQuery>
+            private var user: QueryState<TestUser>
 
             init(sink: Sink, counter: FetchCounter) {
                 self.sink = sink
@@ -212,9 +212,9 @@ final class SwiftUIIntegrationTests: XCTestCase {
             }
 
             var body: some View {
-                Text(user.state.data?.name ?? "Loading")
+                Text(user.data?.name ?? "Loading")
                     .onAppear {
-                        sink.invalidate = { await $user.invalidate() }
+                        sink.invalidate = { try? await $user.invalidate() }
                     }
             }
         }
@@ -227,14 +227,14 @@ final class SwiftUIIntegrationTests: XCTestCase {
             }
         )
         let window = NSWindow(contentViewController: hosting)
-        window.makeKeyAndOrderFront(nil)
+        window.makeKeyAndOrderFront(nil as Any?)
         _ = hosting.view
         hosting.view.layoutSubtreeIfNeeded()
         window.displayIfNeeded()
         defer { window.close() }
 
         try await eventually(timeout: 5.0) {
-            let cached = try? await cache.get(key: "user:99", as: TestUser.self)
+            let cached = try? await cache.get(storageKey: TestUserQuery(userId: 99).storageKey, as: TestUser.self)
             return cached?.data.name == "Fetch 1"
         }
 
@@ -245,7 +245,7 @@ final class SwiftUIIntegrationTests: XCTestCase {
         await sink.invalidate?()
 
         try await eventually(timeout: 5.0) {
-            let cached = try? await cache.get(key: "user:99", as: TestUser.self)
+            let cached = try? await cache.get(storageKey: TestUserQuery(userId: 99).storageKey, as: TestUser.self)
             return cached?.data.name == "Fetch 2"
         }
     }
@@ -263,8 +263,8 @@ final class SwiftUIIntegrationTests: XCTestCase {
         }
 
         struct QueryView: View {
-            @Query
-            private var user: QueryObserver<TestUserQuery>
+            @Query<TestUserQuery>
+            private var user: QueryState<TestUser>
 
             init(counter: FetchCounter) {
                 _user = Query(
@@ -278,7 +278,7 @@ final class SwiftUIIntegrationTests: XCTestCase {
             }
 
             var body: some View {
-                Text(user.state.data?.name ?? "Loading")
+                Text(user.data?.name ?? "Loading")
             }
         }
 
@@ -304,21 +304,21 @@ final class SwiftUIIntegrationTests: XCTestCase {
             )
         )
         let window = NSWindow(contentViewController: hosting)
-        window.makeKeyAndOrderFront(nil)
+        window.makeKeyAndOrderFront(nil as Any?)
         _ = hosting.view
         hosting.view.layoutSubtreeIfNeeded()
         window.displayIfNeeded()
         defer { window.close() }
 
         try await eventually(timeout: 3.0) {
-            let cached = try? await cache1.get(key: "user:500", as: TestUser.self)
+            let cached = try? await cache1.get(storageKey: TestUserQuery(userId: 500).storageKey, as: TestUser.self)
             return cached?.data.name == "Fetch 1"
         }
 
         model.useSecondClient = true
 
         try await eventually(timeout: 3.0) {
-            let cached = try? await cache2.get(key: "user:500", as: TestUser.self)
+            let cached = try? await cache2.get(storageKey: TestUserQuery(userId: 500).storageKey, as: TestUser.self)
             return cached?.data.name == "Fetch 2"
         }
     }
@@ -331,8 +331,8 @@ final class SwiftUIIntegrationTests: XCTestCase {
         struct LocaleQuery: QueryKey {
             typealias Response = String
 
-            var cacheKey: String { "locale:probe" }
-            var tags: Set<QueryTag> { [QueryTag("locale")] }
+            var identity: QueryIdentity { QueryIdentity("locale", "probe") }
+            var invalidationTags: Set<QueryTag> { [QueryTag("locale")] }
         }
 
         @MainActor
@@ -348,8 +348,8 @@ final class SwiftUIIntegrationTests: XCTestCase {
         struct LocaleQueryView: View {
             @ObservedObject var sink: Sink
 
-            @Query
-            private var localeValue: QueryObserver<LocaleQuery>
+            @Query<LocaleQuery>
+            private var localeValue: QueryState<String>
 
             init(sink: Sink) {
                 self.sink = sink
@@ -363,9 +363,9 @@ final class SwiftUIIntegrationTests: XCTestCase {
             }
 
             var body: some View {
-                Text(localeValue.state.data ?? "Loading")
+                Text(localeValue.data ?? "Loading")
                     .onAppear {
-                        sink.refetch = { await $localeValue.refetch() }
+                        sink.refetch = { _ = try? await $localeValue.refetch() }
                     }
             }
         }
@@ -388,14 +388,14 @@ final class SwiftUIIntegrationTests: XCTestCase {
             rootView: ContainerView(model: model, sink: sink, client: client)
         )
         let window = NSWindow(contentViewController: hosting)
-        window.makeKeyAndOrderFront(nil)
+        window.makeKeyAndOrderFront(nil as Any?)
         _ = hosting.view
         hosting.view.layoutSubtreeIfNeeded()
         window.displayIfNeeded()
         defer { window.close() }
 
         try await eventually(timeout: 3.0) {
-            let cached = try? await cache.get(key: "locale:probe", as: String.self)
+            let cached = try? await cache.get(storageKey: LocaleQuery().storageKey, as: String.self)
             return cached?.data == "en_US"
         }
 
@@ -407,7 +407,7 @@ final class SwiftUIIntegrationTests: XCTestCase {
         await sink.refetch?()
 
         try await eventually(timeout: 3.0) {
-            let cached = try? await cache.get(key: "locale:probe", as: String.self)
+            let cached = try? await cache.get(storageKey: LocaleQuery().storageKey, as: String.self)
             return cached?.data == "fr_FR"
         }
     }
@@ -419,9 +419,9 @@ final class SwiftUIIntegrationTests: XCTestCase {
 
         let key = TestUserQuery(userId: 10)
         try await cache.set(
-            key: key.cacheKey,
+            storageKey: key.storageKey,
             data: TestUser(id: 10, name: "Cached"),
-            tags: key.tags,
+            tags: key.cacheTags,
             staleTime: .hours(1),
             cacheTime: .hours(1)
         )
@@ -436,7 +436,7 @@ final class SwiftUIIntegrationTests: XCTestCase {
 
             @Mutation(
                 invalidates: QueryTag("users"),
-                mutationFn: { () async throws -> Void in () }
+                mutationFn: { _ in () }
             )
             var mutation
 
@@ -455,7 +455,7 @@ final class SwiftUIIntegrationTests: XCTestCase {
             }
         )
         let window = NSWindow(contentViewController: hosting)
-        window.makeKeyAndOrderFront(nil)
+        window.makeKeyAndOrderFront(nil as Any?)
         _ = hosting.view
         hosting.view.layoutSubtreeIfNeeded()
         window.displayIfNeeded()
@@ -467,7 +467,7 @@ final class SwiftUIIntegrationTests: XCTestCase {
         defer { window.close() }
         try await sink.run?() ?? XCTFail("Expected mutation runner")
 
-        let cached = try await cache.get(key: key.cacheKey, as: TestUser.self)
+        let cached = try await cache.get(storageKey: key.storageKey, as: TestUser.self)
         XCTAssertEqual(cached?.isStale, true)
     }
 }

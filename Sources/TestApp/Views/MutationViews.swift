@@ -5,7 +5,7 @@ struct CreatePostView: View {
     let server: MockServer
     @Environment(\.dismiss) private var dismiss
 
-    @Mutation private var createPost: MutationState<CreatePostInput, Post>
+    @Mutation private var createPost: MutationState<CreatePostInput, Post, Void>
 
     @State private var title = ""
     @State private var content = ""
@@ -14,7 +14,7 @@ struct CreatePostView: View {
         self.server = server
         self._createPost = Mutation(
             invalidates: .posts,
-            mutationFn: { [server] input in
+            mutationFn: { [server] input, _ in
                 try await server.createPost(
                     title: input.title,
                     body: input.body,
@@ -85,7 +85,7 @@ struct AddCommentView: View {
 
     @Environment(\.dismiss) private var dismiss
 
-    @Mutation private var addComment: MutationState<CreateCommentInput, Comment>
+    @Mutation private var addComment: MutationState<CreateCommentInput, Comment, Void>
 
     @State private var commentBody = ""
 
@@ -94,7 +94,7 @@ struct AddCommentView: View {
         self.server = server
         self._addComment = Mutation(
             invalidates: [QueryTag.postComments(postId)],
-            mutationFn: { [server] input in
+            mutationFn: { [server] input, _ in
                 try await server.createComment(
                     postId: input.postId,
                     authorId: input.authorId,

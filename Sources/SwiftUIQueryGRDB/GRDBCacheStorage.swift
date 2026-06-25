@@ -22,10 +22,10 @@ struct GRDBCacheStorage: CacheStorage {
 
     // MARK: - Reads
 
-    public func read(key: String, now: Date) async throws -> CacheRecord? {
+    public func read(storageKey: String, now: Date) async throws -> CacheRecord? {
         try await pool.read { db in
             try QueryCacheEntry
-                .filter(QueryCacheEntry.Columns.cacheKey == key)
+                .filter(QueryCacheEntry.Columns.cacheKey == storageKey)
                 .filter(
                     QueryCacheEntry.Columns.expiresAt == nil ||
                     QueryCacheEntry.Columns.expiresAt > now
@@ -35,19 +35,19 @@ struct GRDBCacheStorage: CacheStorage {
         }
     }
 
-    public func readIgnoringExpiry(key: String) async throws -> CacheRecord? {
+    public func readIgnoringExpiry(storageKey: String) async throws -> CacheRecord? {
         try await pool.read { db in
             try QueryCacheEntry
-                .filter(QueryCacheEntry.Columns.cacheKey == key)
+                .filter(QueryCacheEntry.Columns.cacheKey == storageKey)
                 .fetchOne(db)?
                 .toCacheRecord()
         }
     }
 
-    public func exists(key: String, now: Date) async throws -> Bool {
+    public func exists(storageKey: String, now: Date) async throws -> Bool {
         try await pool.read { db in
             try QueryCacheEntry
-                .filter(QueryCacheEntry.Columns.cacheKey == key)
+                .filter(QueryCacheEntry.Columns.cacheKey == storageKey)
                 .filter(
                     QueryCacheEntry.Columns.expiresAt == nil ||
                     QueryCacheEntry.Columns.expiresAt > now
@@ -64,7 +64,7 @@ struct GRDBCacheStorage: CacheStorage {
 
             // Preserve identity + original creation time on overwrite.
             if let existing = try QueryCacheEntry
-                .filter(QueryCacheEntry.Columns.cacheKey == record.cacheKey)
+                .filter(QueryCacheEntry.Columns.cacheKey == record.storageKey)
                 .fetchOne(db) {
                 entry.id = existing.id
                 entry.createdAt = existing.createdAt
@@ -79,10 +79,7 @@ struct GRDBCacheStorage: CacheStorage {
         try await pool.write { db in
             // Match in Swift (never in SQL), identical to the prior behavior.
             let matched = try QueryCacheEntry.fetchAll(db).filter { entry in
-                TagMatching.matches(
-                    tag: tag,
-                    tagSegments: TagMatching.decodeSegments(fromJSON: entry.tags)
-                )
+                entry.decodedTags.containsMatch(for: tag)
             }
             for id in matched.compactMap(\.id) {
                 _ = try QueryCacheEntry
@@ -94,16 +91,16 @@ struct GRDBCacheStorage: CacheStorage {
         }
     }
 
-    public func markStale(key: String) async throws {
+    public func markStale(storageKey: String) async throws {
         _ = try await pool.write { db in
-            try QueryCacheEntry.markStale(key: key, in: db)
+            try QueryCacheEntry.markStale(key: storageKey, in: db)
         }
     }
 
-    public func remove(key: String) async throws {
+    public func remove(storageKey: String) async throws {
         _ = try await pool.write { db in
             try QueryCacheEntry
-                .filter(QueryCacheEntry.Columns.cacheKey == key)
+                .filter(QueryCacheEntry.Columns.cacheKey == storageKey)
                 .deleteAll(db)
         }
     }
@@ -155,18 +152,6 @@ struct GRDBCacheStorage: CacheStorage {
     }
 }
 
-// MARK: - QueryCache GRDB convenience
-
-extension QueryCache {
-    /// Build a cache backed by an existing GRDB pool (testing / direct injection).
-    ///
-    /// Lives here (not in `QueryCache.swift`) so the core cache no longer needs to
-    /// import GRDB.
-    internal init(dbPool: DatabasePool, clock: QueryClock = .system) {
-        self.init(storage: GRDBCacheStorage(pool: dbPool), clock: clock)
-    }
-}
-
 // MARK: - QueryCacheEntry <-> CacheRecord mapping
 
 extension QueryCacheEntry {
@@ -174,11 +159,11 @@ extension QueryCacheEntry {
     init(record: CacheRecord) {
         self.init(
             id: nil,
-            cacheKey: record.cacheKey,
+            cacheKey: record.storageKey,
             queryHash: record.queryHash,
             responseData: record.responseData,
             responseType: record.responseType,
-            tags: TagMatching.encodeSegments(record.tagSegments),
+            tags: Self.encodeTags(record.tags),
             createdAt: record.createdAt,
             updatedAt: record.updatedAt,
             staleAt: record.staleAt,
@@ -191,11 +176,11 @@ extension QueryCacheEntry {
     /// Project this GRDB record to a backend-agnostic ``CacheRecord``.
     func toCacheRecord() -> CacheRecord {
         CacheRecord(
-            cacheKey: cacheKey,
+            storageKey: cacheKey,
             queryHash: queryHash,
             responseData: responseData,
             responseType: responseType,
-            tagSegments: TagMatching.decodeSegments(fromJSON: tags),
+            tags: decodedTags,
             createdAt: createdAt,
             updatedAt: updatedAt,
             staleAt: staleAt,

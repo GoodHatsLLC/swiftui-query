@@ -136,9 +136,10 @@ func createMigrator() -> DatabaseMigrator {
             columns: ["staleAt", "isInvalidated"]
         )
     }
-    
-    // Future migrations go here
-    // migrator.registerMigration("v2_addSomeFeature") { db in ... }
+
+    migrator.registerMigration("v2_clearLegacyStringCacheKeys") { db in
+        try db.execute(sql: "DELETE FROM query_cache")
+    }
     
     return migrator
 }

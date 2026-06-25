@@ -161,6 +161,9 @@ public final class QueryState<T: Sendable>: Sendable {
     
     /// Number of times the query has failed consecutively
     public private(set) var failureCount: Int = 0
+
+    /// True when the current cached data is known to be stale.
+    public private(set) var isStale: Bool = false
     
     // MARK: - Derived State (React Query style)
     
@@ -181,12 +184,12 @@ public final class QueryState<T: Sendable>: Sendable {
     
     /// True when refetching in the background (have data + fetching)
     public var isRefetching: Bool { isSuccess && isFetching }
+
+    /// True when refreshing data in the background.
+    public var isRefreshing: Bool { isRefetching }
     
     /// True when fetch is paused
     public var isPaused: Bool { fetchStatus == .paused }
-    
-    /// True if we have stale data that's being refreshed
-    public var isStale: Bool { isRefetching }
     
     /// True if data exists, regardless of staleness
     public var hasData: Bool { data != nil }
@@ -231,12 +234,13 @@ public final class QueryState<T: Sendable>: Sendable {
     
     // MARK: - Internal State Updates
     
-    func setData(_ data: T) {
+    func setData(_ data: T, isStale: Bool = false) {
         // Skip update if already in success state with same data (when Equatable)
-        if status == .success, let existing = self.data, areEqual(existing, data) {
+        if status == .success, let existing = self.data, areEqual(existing, data), self.isStale == isStale {
             return
         }
         self.data = data
+        self.isStale = isStale
         self.status = .success
         self.dataUpdatedAt = Date()
         self.error = nil
@@ -256,6 +260,7 @@ public final class QueryState<T: Sendable>: Sendable {
         // Only set status to error if we don't have data
         if data == nil {
             self.status = .error
+            self.isStale = false
         }
     }
 
@@ -293,6 +298,7 @@ public final class QueryState<T: Sendable>: Sendable {
         self.error = nil
         self.status = .idle
         self.fetchStatus = .idle
+        self.isStale = false
         self.dataUpdatedAt = nil
         self.errorUpdatedAt = nil
         self.backgroundError = nil
@@ -312,7 +318,8 @@ extension QueryState: Equatable where T: Equatable {
         MainActor.assumeIsolated {
             lhs.data == rhs.data &&
             lhs.status == rhs.status &&
-            lhs.fetchStatus == rhs.fetchStatus
+            lhs.fetchStatus == rhs.fetchStatus &&
+            lhs.isStale == rhs.isStale
         }
     }
 }

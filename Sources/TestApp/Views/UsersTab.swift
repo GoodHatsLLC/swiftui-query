@@ -15,7 +15,7 @@ struct UserListView: View {
     @Query(UsersQuery(), fetch: { try await $0.mockServer.getUsers() }) var users
     var body: some View {
             List {
-                switch users.state.result {
+                switch users.result {
                 case .idle:
                     Text("Initializing...")
                         .foregroundStyle(.secondary)
@@ -34,7 +34,7 @@ struct UserListView: View {
 
                 case .error(let error):
                     ErrorView(error: error) {
-                        Task { await users.refetch() }
+                        Task { _ = try? await $users.refetch() }
                     }
                 }
             }
@@ -42,11 +42,11 @@ struct UserListView: View {
                 UserDetailView(userId: user.id)
             }
             .refreshable {
-                await users.refetch()
+                _ = try? await $users.refetch()
             }
             .toolbar {
                 ToolbarItem(placement: .primaryAction) {
-                    if users.state.isFetching {
+                    if users.isFetching {
                         ProgressView()
                     }
                 }
@@ -106,7 +106,7 @@ struct UserRowPlaceholder: View {
 struct UserDetailView: View {
     let userId: Int
 
-    @Query private var user: QueryObserver<UserQuery>
+    @Query<UserQuery> private var user: QueryState<User>
 
     init(userId: Int) {
         self.userId = userId
@@ -117,7 +117,7 @@ struct UserDetailView: View {
 
     var body: some View {
         List {
-            switch user.state.result {
+            switch user.result {
             case .idle, .loading:
                 Section {
                     UserDetailPlaceholder()
@@ -135,14 +135,14 @@ struct UserDetailView: View {
             case .error(let error):
                 Section {
                     ErrorView(error: error) {
-                        Task { await user.refetch() }
+                        Task { _ = try? await $user.refetch() }
                     }
                 }
             }
         }
-        .navigationTitle(user.state.data?.name ?? "User")
+        .navigationTitle(user.data?.name ?? "User")
         .refreshable {
-            await user.refetch()
+            _ = try? await $user.refetch()
         }
     }
 }
@@ -150,7 +150,7 @@ struct UserDetailView: View {
 struct UserPostsSection: View {
     let userId: Int
 
-    @Query private var userPosts: QueryObserver<UserPostsQuery>
+    @Query<UserPostsQuery> private var userPosts: QueryState<[Post]>
 
     init(userId: Int) {
         self.userId = userId
@@ -160,9 +160,9 @@ struct UserPostsSection: View {
     }
 
     var body: some View {
-        UserPostsList(postsState: userPosts.state)
+        UserPostsList(postsState: userPosts)
             .refreshable {
-                await userPosts.refetch()
+                _ = try? await $userPosts.refetch()
             }
     }
 }

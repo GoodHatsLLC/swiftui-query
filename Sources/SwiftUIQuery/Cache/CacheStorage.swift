@@ -23,15 +23,15 @@ import Foundation
 /// or a custom one) can conform and be supplied via `CacheStorageKind.custom`.
 public protocol CacheStorage: Sendable {
     /// Fetch a non-expired record. Returns `nil` if absent or expired at `now`.
-    func read(key: String, now: Date) async throws -> CacheRecord?
+    func read(storageKey: String, now: Date) async throws -> CacheRecord?
 
     /// Fetch a record regardless of expiry (stale-while-revalidate fallback).
-    func readIgnoringExpiry(key: String) async throws -> CacheRecord?
+    func readIgnoringExpiry(storageKey: String) async throws -> CacheRecord?
 
-    /// Whether a non-expired record exists for `key` at `now`.
-    func exists(key: String, now: Date) async throws -> Bool
+    /// Whether a non-expired record exists for `storageKey` at `now`.
+    func exists(storageKey: String, now: Date) async throws -> Bool
 
-    /// Insert or replace a record by `cacheKey`. Implementations preserve the
+    /// Insert or replace a record by `storageKey`. Implementations preserve the
     /// original `createdAt` when overwriting an existing record.
     func upsert(_ record: CacheRecord) async throws
 
@@ -44,10 +44,10 @@ public protocol CacheStorage: Sendable {
     func invalidate(tag: QueryTag, now: Date) async throws -> [String]
 
     /// Mark a single record invalidated. No-op if the key is absent.
-    func markStale(key: String) async throws
+    func markStale(storageKey: String) async throws
 
     /// Remove a single record.
-    func remove(key: String) async throws
+    func remove(storageKey: String) async throws
 
     /// Remove all records.
     func clear() async throws
